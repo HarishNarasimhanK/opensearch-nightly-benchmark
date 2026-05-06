@@ -1,0 +1,9 @@
+{
+  "datafusionRepo": "https://github.com/opensearch-project/OpenSearch.git",
+  "datafusionBranch": "main",
+  "luceneRepo": "https://github.com/opensearch-project/OpenSearch.git",
+  "luceneBranch": "main",
+  "ingestPercentage": 100,
+  "runIntervalHours": 24,
+  "s3Bucket": "opensearch-nightly-500923064869"
+}

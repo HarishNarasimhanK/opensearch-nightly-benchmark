@@ -1,0 +1,16 @@
+# Temp files
+*.tmp
+*.swp
+*~
+
+# OS files
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.hypothesis/
+
+# Lock files (runtime only)
+*.lock
