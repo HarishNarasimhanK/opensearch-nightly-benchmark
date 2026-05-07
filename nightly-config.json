@@ -1,8 +1,12 @@
 {
-  "datafusionRepo": "https://github.com/opensearch-project/OpenSearch.git",
-  "datafusionBranch": "main",
+  "datafusionRepo": "https://github.com/rayshrey/OpenSearch.git",
+  "datafusionBranch": "lucene-file-deleter-fix",
   "luceneRepo": "https://github.com/opensearch-project/OpenSearch.git",
   "luceneBranch": "main",
+  "datafusionWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
+  "datafusionWorkloadBranch": "nightly",
+  "luceneWorkloadRepo": "https://github.com/opensearch-project/opensearch-benchmark-workloads.git",
+  "luceneWorkloadBranch": "main",
   "ingestPercentage": 100,
   "runIntervalHours": 24,
   "s3Bucket": "opensearch-nightly-500923064869"

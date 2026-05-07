@@ -1,7 +1,6 @@
 #!/bin/bash
 # Results parsing, CSV construction, and S3 upload
 
-CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput.csv"
 CSV_HEADERS="date,run_id,engine,min_throughput,mean_throughput,median_throughput,max_throughput,error_rate,p50_latency_ms,p99_latency_ms,duration_sec,ingest_percentage,status,error_reason,mode,datafusion_repo,datafusion_branch"
 
 extract_metric() {
@@ -38,6 +37,7 @@ parse_and_store_results() {
   local mode="$2"
   local start_time="$3"
   local end_time="$4"
+  local CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput.csv"
 
   local date_str
   date_str=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -74,6 +74,7 @@ record_failure() {
   local date_str
   date_str=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local mode="${CONFIG_MODE:-nightly}"
+  local CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput.csv"
 
   local local_csv="/tmp/indexing-throughput.csv"
   aws s3 cp "$CSV_S3_PATH" "$local_csv" 2>/dev/null || {

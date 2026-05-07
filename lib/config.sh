@@ -50,6 +50,10 @@ load_config() {
   CONFIG_INGEST_PERCENTAGE=$(jq -r '.ingestPercentage // 100' "$config_file")
   CONFIG_S3_BUCKET=$(jq -r '.s3Bucket // "opensearch-nightly-500923064869"' "$config_file")
   CONFIG_MODE=$(jq -r '.mode // "nightly"' "$config_file")
+  CONFIG_DATAFUSION_WORKLOAD_REPO=$(jq -r '.datafusionWorkloadRepo // "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git"' "$config_file")
+  CONFIG_DATAFUSION_WORKLOAD_BRANCH=$(jq -r '.datafusionWorkloadBranch // "nightly"' "$config_file")
+  CONFIG_LUCENE_WORKLOAD_REPO=$(jq -r '.luceneWorkloadRepo // "https://github.com/opensearch-project/opensearch-benchmark-workloads.git"' "$config_file")
+  CONFIG_LUCENE_WORKLOAD_BRANCH=$(jq -r '.luceneWorkloadBranch // "main"' "$config_file")
 
   # Clamp runIntervalHours to [4, 24]
   local raw_interval
@@ -68,6 +72,10 @@ load_config() {
   export CONFIG_RUN_INTERVAL_HOURS
   export CONFIG_S3_BUCKET
   export CONFIG_MODE
+  export CONFIG_DATAFUSION_WORKLOAD_REPO
+  export CONFIG_DATAFUSION_WORKLOAD_BRANCH
+  export CONFIG_LUCENE_WORKLOAD_REPO
+  export CONFIG_LUCENE_WORKLOAD_BRANCH
 
   echo "Config loaded:"
   echo "  DataFusion: ${CONFIG_DATAFUSION_REPO}@${CONFIG_DATAFUSION_BRANCH}"

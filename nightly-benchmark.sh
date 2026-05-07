@@ -72,6 +72,13 @@ while true; do
   # 6. Git pull CDK repo
   git_pull_cdk_repo
 
+  # 6b. Ensure workloads are cloned
+  ensure_workloads_cloned
+
+  # 6c. Clean stale BENCHMARK_COMPLETE flag from previous runs (otherwise upload-data-on-complete
+  #     pollers on the new instances would fire immediately on stale flag)
+  aws s3 rm "s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE" 2>/dev/null || true
+
   # 7. Deploy CDK stack
   TEARDOWN_NEEDED=true
   START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -135,6 +142,11 @@ while true; do
 
   END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+  # 10b. Trigger data folder upload (writes BENCHMARK_COMPLETE flag → poller on each instance uploads data)
+  if [ "$DF_FAILED" = false ] || [ "$LU_FAILED" = false ]; then
+    trigger_data_upload || echo "WARNING: Failed to trigger data upload"
+  fi
+
   # 11. Parse results + store
   if [ "$DF_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
     record_failure "$RUN_ID" "Both engines failed"
@@ -156,8 +168,9 @@ while true; do
     echo "WARNING: Trend chart generation/upload failed"
   fi
 
-  # 14. Teardown
-  teardown_stack
+  # 14. NOTE: We do NOT teardown here. The next run's precheck_destroy_existing (step 5) will
+  #     destroy the previous run's stack. This gives the upload-data-on-complete pollers running
+  #     on each instance plenty of time (until the next run) to finish uploading data folders to S3.
   TEARDOWN_NEEDED=false
 
   # 15. Release lock

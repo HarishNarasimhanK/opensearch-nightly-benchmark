@@ -10,7 +10,8 @@ git_pull_cdk_repo() {
   if [ ! -d "$CDK_REPO_DIR" ]; then
     git clone https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git "$CDK_REPO_DIR"
   else
-    git -C "$CDK_REPO_DIR" pull --ff-only
+    git -C "$CDK_REPO_DIR" fetch origin
+    git -C "$CDK_REPO_DIR" reset --hard origin/main
   fi
 }
 

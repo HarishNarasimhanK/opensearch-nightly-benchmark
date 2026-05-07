@@ -172,14 +172,36 @@ def generate_html(rows, output_path):
     }
 
     # Write self-contained HTML
+    setup_info = """
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px 24px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; font-size: 13px; color: #495057;">
+      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark - DataFusion vs Lucene</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px;">
+        <div><b>Instance:</b> r7g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
+        <div><b>EBS:</b> 500GB gp3, 6000 IOPS, 500 MB/s throughput</div>
+        <div><b>JVM Heap:</b> 32GB</div>
+        <div><b>Dataset:</b> ClickBench (100M docs)</div>
+        <div><b>Workload:</b> index-append only (no queries)</div>
+        <div><b>Shards:</b> 1 primary, 0 replicas</div>
+        <div><b>Bulk Clients:</b> DataFusion: 50, Lucene: 8 (OSB side)</div>
+        <div><b>DataFusion:</b> opensearch-project/OpenSearch main (Parquet engine)</div>
+        <div><b>Lucene:</b> opensearch-project/OpenSearch main (standard engine)</div>
+        <div><b>Region:</b> us-east-1</div>
+      </div>
+      <div style="margin-top: 8px; font-size: 11px; color: #6c757d;">
+        [*] Circle = nightly run &nbsp; [&lt;&gt;] Diamond = adhoc run &nbsp; [O] Red circle = regression (&gt;10% drop from 7-day avg)
+      </div>
+    </div>
+    """
+
     html = f"""<!DOCTYPE html>
 <html>
 <head>
   <title>Nightly Indexing Throughput Trend</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
-<body>
-  <div id="chart" style="width:100%;height:90vh;"></div>
+<body style="margin:0;">
+  {setup_info}
+  <div id="chart" style="width:100%;height:80vh;"></div>
   <script>
     var data = {json.dumps(traces, default=str)};
     var layout = {json.dumps(layout)};
