@@ -47,6 +47,8 @@ load_config() {
   CONFIG_DATAFUSION_BRANCH=$(jq -r '.datafusionBranch // "main"' "$config_file")
   CONFIG_LUCENE_REPO=$(jq -r '.luceneRepo // "https://github.com/opensearch-project/OpenSearch.git"' "$config_file")
   CONFIG_LUCENE_BRANCH=$(jq -r '.luceneBranch // "main"' "$config_file")
+  CONFIG_CDK_REPO=$(jq -r '.cdkRepo // "https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git"' "$config_file")
+  CONFIG_CDK_BRANCH=$(jq -r '.cdkBranch // "main"' "$config_file")
   CONFIG_INGEST_PERCENTAGE=$(jq -r '.ingestPercentage // 100' "$config_file")
   CONFIG_S3_BUCKET=$(jq -r '.s3Bucket // "opensearch-nightly-500923064869"' "$config_file")
   CONFIG_MODE=$(jq -r '.mode // "nightly"' "$config_file")
@@ -68,6 +70,8 @@ load_config() {
   export CONFIG_DATAFUSION_BRANCH
   export CONFIG_LUCENE_REPO
   export CONFIG_LUCENE_BRANCH
+  export CONFIG_CDK_REPO
+  export CONFIG_CDK_BRANCH
   export CONFIG_INGEST_PERCENTAGE
   export CONFIG_RUN_INTERVAL_HOURS
   export CONFIG_S3_BUCKET

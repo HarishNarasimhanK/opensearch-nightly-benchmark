@@ -3,16 +3,17 @@
 
 CDK_REPO_DIR="$HOME/cdk-repo"
 CDK_DIR="$CDK_REPO_DIR"
+CDK_REPO_URL="${CONFIG_CDK_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git}"
+CDK_REPO_BRANCH="${CONFIG_CDK_BRANCH:-main}"
 DATAFUSION_IP=""
 LUCENE_IP=""
 
 git_pull_cdk_repo() {
-  if [ ! -d "$CDK_REPO_DIR" ]; then
-    git clone https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git "$CDK_REPO_DIR"
-  else
-    git -C "$CDK_REPO_DIR" fetch origin
-    git -C "$CDK_REPO_DIR" reset --hard origin/main
-  fi
+  # Always fresh clone to ensure correct repo/branch from config
+  rm -rf "$CDK_REPO_DIR"
+  echo "Cloning CDK repo: $CDK_REPO_URL@$CDK_REPO_BRANCH..."
+  git clone -b "$CDK_REPO_BRANCH" "$CDK_REPO_URL" "$CDK_REPO_DIR"
+  cd "$CDK_REPO_DIR" && npm install --silent
 }
 
 precheck_destroy_existing() {
@@ -52,6 +53,10 @@ deploy_cdk_stack() {
     -c datafusionRepo="$CONFIG_DATAFUSION_REPO" \
     -c luceneBranch="$CONFIG_LUCENE_BRANCH" \
     -c luceneRepo="$CONFIG_LUCENE_REPO" \
+    -c datafusionWorkloadRepo="$CONFIG_DATAFUSION_WORKLOAD_REPO" \
+    -c datafusionWorkloadBranch="$CONFIG_DATAFUSION_WORKLOAD_BRANCH" \
+    -c luceneWorkloadRepo="$CONFIG_LUCENE_WORKLOAD_REPO" \
+    -c luceneWorkloadBranch="$CONFIG_LUCENE_WORKLOAD_BRANCH" \
     -c ingestPercentage="$CONFIG_INGEST_PERCENTAGE"
 }
 
