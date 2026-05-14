@@ -10,6 +10,7 @@ LUCENE_IP=""
 
 git_pull_cdk_repo() {
   # Always fresh clone to ensure correct repo/branch from config
+  cd "$HOME"
   rm -rf "$CDK_REPO_DIR"
   echo "Cloning CDK repo: $CDK_REPO_URL@$CDK_REPO_BRANCH..."
   git clone -b "$CDK_REPO_BRANCH" "$CDK_REPO_URL" "$CDK_REPO_DIR"
