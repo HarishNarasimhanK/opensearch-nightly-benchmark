@@ -11,9 +11,26 @@ LUCENE_IP=""
 git_pull_cdk_repo() {
   # Always fresh clone to ensure correct repo/branch from config
   cd "$HOME"
+
+  # Preserve .env (contains VPC_ID, SUBNET_ID, etc. — not in git)
+  if [ -f "$CDK_REPO_DIR/.env" ]; then
+    cp "$CDK_REPO_DIR/.env" /tmp/cdk-env-backup
+  fi
+
   rm -rf "$CDK_REPO_DIR"
   echo "Cloning CDK repo: $CDK_REPO_URL@$CDK_REPO_BRANCH..."
   git clone -b "$CDK_REPO_BRANCH" "$CDK_REPO_URL" "$CDK_REPO_DIR"
+
+  # Restore .env
+  if [ -f /tmp/cdk-env-backup ]; then
+    cp /tmp/cdk-env-backup "$CDK_REPO_DIR/.env"
+    rm -f /tmp/cdk-env-backup
+  else
+    # First run: generate .env via setup-env.sh
+    echo "No .env backup found — running setup-env.sh..."
+    bash "$CDK_REPO_DIR/scripts/setup-env.sh"
+  fi
+
   cd "$CDK_REPO_DIR" && npm install --silent
 }
 
