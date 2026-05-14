@@ -4,20 +4,20 @@
 # Ensure pip --user binaries (opensearch-benchmark) are in PATH
 export PATH="$HOME/.local/bin:$PATH"
 
-DATAFUSION_WORKLOAD_REPO="${CONFIG_DATAFUSION_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
-DATAFUSION_WORKLOAD_BRANCH="${CONFIG_DATAFUSION_WORKLOAD_BRANCH:-nightly}"
-LUCENE_WORKLOAD_REPO="${CONFIG_LUCENE_WORKLOAD_REPO:-https://github.com/opensearch-project/opensearch-benchmark-workloads.git}"
-LUCENE_WORKLOAD_BRANCH="${CONFIG_LUCENE_WORKLOAD_BRANCH:-main}"
-
 ensure_workloads_cloned() {
+  local df_repo="${CONFIG_DATAFUSION_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
+  local df_branch="${CONFIG_DATAFUSION_WORKLOAD_BRANCH:-nightly}"
+  local lu_repo="${CONFIG_LUCENE_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
+  local lu_branch="${CONFIG_LUCENE_WORKLOAD_BRANCH:-nightly-lucene}"
+
   # Always fresh clone to ensure correct repo/branch from config
   rm -rf "$HOME/datafusion-workloads"
-  echo "Cloning workloads for datafusion..."
-  git clone "$DATAFUSION_WORKLOAD_REPO" -b "$DATAFUSION_WORKLOAD_BRANCH" "$HOME/datafusion-workloads"
+  echo "Cloning workloads for datafusion: ${df_repo}@${df_branch}..."
+  git clone "$df_repo" -b "$df_branch" "$HOME/datafusion-workloads"
 
   rm -rf "$HOME/lucene-workloads"
-  echo "Cloning workloads for lucene..."
-  git clone "$LUCENE_WORKLOAD_REPO" -b "$LUCENE_WORKLOAD_BRANCH" "$HOME/lucene-workloads"
+  echo "Cloning workloads for lucene: ${lu_repo}@${lu_branch}..."
+  git clone "$lu_repo" -b "$lu_branch" "$HOME/lucene-workloads"
 }
 
 wait_for_health() {
