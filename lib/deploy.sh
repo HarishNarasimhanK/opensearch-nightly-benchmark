@@ -3,12 +3,13 @@
 
 CDK_REPO_DIR="$HOME/cdk-repo"
 CDK_DIR="$CDK_REPO_DIR"
-CDK_REPO_URL="${CONFIG_CDK_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git}"
-CDK_REPO_BRANCH="${CONFIG_CDK_BRANCH:-main}"
 DATAFUSION_IP=""
 LUCENE_IP=""
 
 git_pull_cdk_repo() {
+  local repo_url="${CONFIG_CDK_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git}"
+  local repo_branch="${CONFIG_CDK_BRANCH:-main}"
+
   # Always fresh clone to ensure correct repo/branch from config
   cd "$HOME"
 
@@ -18,8 +19,8 @@ git_pull_cdk_repo() {
   fi
 
   rm -rf "$CDK_REPO_DIR"
-  echo "Cloning CDK repo: $CDK_REPO_URL@$CDK_REPO_BRANCH..."
-  git clone -b "$CDK_REPO_BRANCH" "$CDK_REPO_URL" "$CDK_REPO_DIR"
+  echo "Cloning CDK repo: $repo_url@$repo_branch..."
+  git clone -b "$repo_branch" "$repo_url" "$CDK_REPO_DIR"
 
   # Restore .env
   if [ -f /tmp/cdk-env-backup ]; then
