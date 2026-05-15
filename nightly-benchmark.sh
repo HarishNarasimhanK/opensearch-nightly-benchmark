@@ -55,11 +55,10 @@ while true; do
     exit 1
   fi
 
-  # 3. Generate RUN_ID
-  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  RUN_ID="nightly-run-${TIMESTAMP}"
+  # 3. Generate RUN_ID placeholder (will be overwritten by CDK output)
+  RUN_ID="pending"
   echo "============================================"
-  echo "Starting run: $RUN_ID (mode: $CONFIG_MODE)"
+  echo "Starting run (mode: $CONFIG_MODE)"
   echo "============================================"
 
   # 4. Set trap for cleanup

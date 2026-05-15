@@ -66,6 +66,7 @@ deploy_cdk_stack() {
     --require-approval never \
     --outputs-file "$HOME/nightly-cdk-outputs.json" \
     -c benchmarkEnabled=false \
+    -c runId="$run_id" \
     -c runIdPrefix=nightly \
     -c s3Bucket="$CONFIG_S3_BUCKET" \
     -c datafusionBranch="$CONFIG_DATAFUSION_BRANCH" \
@@ -85,6 +86,7 @@ parse_cdk_outputs() {
 
   DATAFUSION_IP=$(jq -r ".\"$stack_key\".B4DataFusionPrivateIp // empty" "$outputs_file")
   LUCENE_IP=$(jq -r ".\"$stack_key\".C3LucenePrivateIp // empty" "$outputs_file")
+  RUN_ID=$(jq -r ".\"$stack_key\".F1RunID // empty" "$outputs_file")
 
   if [ -z "$DATAFUSION_IP" ] || [ -z "$LUCENE_IP" ]; then
     echo "ERROR: Could not extract IPs from CDK outputs"
@@ -92,6 +94,12 @@ parse_cdk_outputs() {
     return 1
   fi
 
+  if [ -z "$RUN_ID" ]; then
+    echo "WARNING: Could not extract RUN_ID from CDK outputs, using fallback"
+    RUN_ID="nightly-run-$(date +%Y%m%d_%H%M%S)"
+  fi
+
   echo "DataFusion IP: $DATAFUSION_IP"
   echo "Lucene IP:     $LUCENE_IP"
+  echo "Run ID:        $RUN_ID"
 }
