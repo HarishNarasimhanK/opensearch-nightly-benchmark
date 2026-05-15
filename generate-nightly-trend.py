@@ -2,7 +2,7 @@
 """generate-nightly-trend.py — Plotly HTML trend chart generator.
 
 Reads the nightly indexing throughput CSV and generates a self-contained HTML file
-with a Plotly.js line chart showing DataFusion vs Lucene indexing throughput over time.
+with a Plotly.js line chart showing Parquet vs Lucene indexing throughput over time.
 
 Usage:
   python3 generate-nightly-trend.py --csv <path> --output <path>
@@ -49,16 +49,16 @@ def detect_regressions(throughputs, rolling_avgs, threshold=0.10):
 def generate_html(rows, output_path):
     """Generate self-contained Plotly HTML trend chart."""
     # Separate by engine
-    df_rows = [r for r in rows if r.get("engine") == "datafusion"]
+    pq_rows = [r for r in rows if r.get("engine") == "parquet"]
     lu_rows = [r for r in rows if r.get("engine") == "lucene"]
 
     # Extract data — use mean_throughput for the trend line
-    df_dates = [r["date"] for r in df_rows]
-    df_throughputs = [
+    pq_dates = [r["date"] for r in pq_rows]
+    pq_throughputs = [
         float(r["mean_throughput"]) if r.get("status") == "success" and r.get("mean_throughput") and float(r["mean_throughput"]) > 0 else None
-        for r in df_rows
+        for r in pq_rows
     ]
-    df_modes = [r.get("mode", "nightly") for r in df_rows]
+    pq_modes = [r.get("mode", "nightly") for r in pq_rows]
 
     lu_dates = [r["date"] for r in lu_rows]
     lu_throughputs = [
@@ -68,16 +68,16 @@ def generate_html(rows, output_path):
     lu_modes = [r.get("mode", "nightly") for r in lu_rows]
 
     # Compute regressions on valid (non-None) values
-    df_valid = [t for t in df_throughputs if t is not None]
+    pq_valid = [t for t in pq_throughputs if t is not None]
     lu_valid = [t for t in lu_throughputs if t is not None]
-    df_rolling = compute_rolling_average(df_valid)
+    pq_rolling = compute_rolling_average(pq_valid)
     lu_rolling = compute_rolling_average(lu_valid)
-    df_regressions = detect_regressions(df_valid, df_rolling)
+    pq_regressions = detect_regressions(pq_valid, pq_rolling)
     lu_regressions = detect_regressions(lu_valid, lu_rolling)
 
     # Build hover text
-    df_hover = [
-        f"Date: {r['date']}<br>Engine: datafusion<br>"
+    pq_hover = [
+        f"Date: {r['date']}<br>Engine: parquet<br>"
         f"Mean: {r.get('mean_throughput','')} docs/s<br>"
         f"Min: {r.get('min_throughput','')} | Max: {r.get('max_throughput','')}<br>"
         f"Error Rate: {r.get('error_rate','')}%<br>"
@@ -85,7 +85,7 @@ def generate_html(rows, output_path):
         f"p99 Latency: {r.get('p99_latency_ms','')} ms<br>"
         f"Run: {r.get('run_id','')}<br>"
         f"Duration: {r.get('duration_sec','')}s"
-        for r in df_rows
+        for r in pq_rows
     ]
     lu_hover = [
         f"Date: {r['date']}<br>Engine: lucene<br>"
@@ -100,21 +100,21 @@ def generate_html(rows, output_path):
     ]
 
     # Marker symbols: circle for nightly, diamond for adhoc
-    df_symbols = ["diamond" if m == "adhoc" else "circle" for m in df_modes]
+    pq_symbols = ["diamond" if m == "adhoc" else "circle" for m in pq_modes]
     lu_symbols = ["diamond" if m == "adhoc" else "circle" for m in lu_modes]
 
     # Build Plotly traces
     traces = []
 
-    # DataFusion trace
+    # Parquet trace
     traces.append({
-        "x": df_dates,
-        "y": [t if t else None for t in df_throughputs],
+        "x": pq_dates,
+        "y": [t if t else None for t in pq_throughputs],
         "mode": "lines+markers",
-        "name": "DataFusion",
+        "name": "Parquet",
         "line": {"color": "#FF6B35", "width": 2},
-        "marker": {"color": "#FF6B35", "size": 8, "symbol": df_symbols},
-        "text": df_hover,
+        "marker": {"color": "#FF6B35", "size": 8, "symbol": pq_symbols},
+        "text": pq_hover,
         "hoverinfo": "text",
         "connectgaps": False,
     })
@@ -132,16 +132,16 @@ def generate_html(rows, output_path):
         "connectgaps": False,
     })
 
-    # Regression markers for DataFusion
-    if df_regressions:
-        valid_dates = [df_dates[i] for i in range(len(df_dates)) if df_throughputs[i] is not None]
-        reg_dates = [valid_dates[i] for i in df_regressions if i < len(valid_dates)]
-        reg_values = [df_valid[i] for i in df_regressions if i < len(df_valid)]
+    # Regression markers for Parquet
+    if pq_regressions:
+        valid_dates = [pq_dates[i] for i in range(len(pq_dates)) if pq_throughputs[i] is not None]
+        reg_dates = [valid_dates[i] for i in pq_regressions if i < len(valid_dates)]
+        reg_values = [pq_valid[i] for i in pq_regressions if i < len(pq_valid)]
         traces.append({
             "x": reg_dates,
             "y": reg_values,
             "mode": "markers",
-            "name": "DataFusion Regression",
+            "name": "Parquet Regression",
             "marker": {"color": "red", "size": 14, "symbol": "circle-open", "line": {"width": 3}},
             "hoverinfo": "text",
             "text": [f"REGRESSION: {v:.1f} docs/s" for v in reg_values],
@@ -163,7 +163,7 @@ def generate_html(rows, output_path):
         })
 
     layout = {
-        "title": "Nightly Indexing Throughput: DataFusion vs Lucene",
+        "title": "Nightly Indexing Throughput: Parquet vs Lucene",
         "xaxis": {"title": "Date", "type": "date"},
         "yaxis": {"title": "Mean Indexing Throughput (docs/sec)"},
         "legend": {"x": 0.01, "y": 0.99},
@@ -174,7 +174,7 @@ def generate_html(rows, output_path):
     # Write self-contained HTML
     setup_info = """
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px 24px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; font-size: 13px; color: #495057;">
-      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark - DataFusion vs Lucene</h2>
+      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark - Parquet vs Lucene</h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px;">
         <div><b>Instance:</b> r7g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
         <div><b>EBS:</b> 500GB gp3, 6000 IOPS, 500 MB/s throughput</div>
@@ -182,8 +182,8 @@ def generate_html(rows, output_path):
         <div><b>Dataset:</b> ClickBench (100M docs)</div>
         <div><b>Workload:</b> index-append only (no queries)</div>
         <div><b>Shards:</b> 1 primary, 0 replicas</div>
-        <div><b>Bulk Clients:</b> DataFusion: 50, Lucene: 8 (OSB side)</div>
-        <div><b>DataFusion:</b> opensearch-project/OpenSearch main (Parquet engine)</div>
+        <div><b>Bulk Clients:</b> Parquet: 50, Lucene: 8 (OSB side)</div>
+        <div><b>Parquet:</b> opensearch-project/OpenSearch main (Parquet engine)</div>
         <div><b>Lucene:</b> opensearch-project/OpenSearch main (standard engine)</div>
         <div><b>Region:</b> us-east-1</div>
       </div>

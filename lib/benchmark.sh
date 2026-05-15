@@ -5,15 +5,15 @@
 export PATH="$HOME/.local/bin:$PATH"
 
 ensure_workloads_cloned() {
-  local df_repo="${CONFIG_DATAFUSION_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
-  local df_branch="${CONFIG_DATAFUSION_WORKLOAD_BRANCH:-nightly}"
+  local pq_repo="${CONFIG_PARQUET_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
+  local pq_branch="${CONFIG_PARQUET_WORKLOAD_BRANCH:-nightly}"
   local lu_repo="${CONFIG_LUCENE_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
   local lu_branch="${CONFIG_LUCENE_WORKLOAD_BRANCH:-nightly-lucene}"
 
   # Always fresh clone to ensure correct repo/branch from config
-  rm -rf "$HOME/datafusion-workloads"
-  echo "Cloning workloads for datafusion: ${df_repo}@${df_branch}..."
-  git clone "$df_repo" -b "$df_branch" "$HOME/datafusion-workloads"
+  rm -rf "$HOME/parquet-workloads"
+  echo "Cloning workloads for parquet: ${pq_repo}@${pq_branch}..."
+  git clone "$pq_repo" -b "$pq_branch" "$HOME/parquet-workloads"
 
   rm -rf "$HOME/lucene-workloads"
   echo "Cloning workloads for lucene: ${lu_repo}@${lu_branch}..."
@@ -52,9 +52,9 @@ run_indexing_benchmark() {
   local run_id="$3"
 
   local test_procedure workload_path bulk_clients
-  if [ "$engine" = "datafusion" ]; then
+  if [ "$engine" = "parquet" ]; then
     test_procedure="datafusion-ppl"
-    workload_path="$HOME/datafusion-workloads/clickbench"
+    workload_path="$HOME/parquet-workloads/clickbench"
     bulk_clients=50
   else
     test_procedure="dsl-clickbench"
@@ -92,7 +92,7 @@ run_indexing_benchmark() {
 trigger_data_upload() {
   # Writes the BENCHMARK_COMPLETE flag to S3, which signals the upload-data-on-complete.sh
   # poller running on each OpenSearch instance to tar and upload the data folder.
-  echo "Triggering data folder upload on DataFusion + Lucene instances..."
+  echo "Triggering data folder upload on Parquet + Lucene instances..."
   echo "BENCHMARK_COMPLETE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | \
     aws s3 cp - "s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE"
   echo "Flag written. Instances will upload data folders to s3://${CONFIG_S3_BUCKET}/runs/${RUN_ID}/data/{engine}/"

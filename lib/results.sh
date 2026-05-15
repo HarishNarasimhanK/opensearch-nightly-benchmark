@@ -1,7 +1,7 @@
 #!/bin/bash
 # Results parsing, CSV construction, and S3 upload
 
-CSV_HEADERS="date,run_id,engine,min_throughput,mean_throughput,median_throughput,max_throughput,error_rate,p50_latency_ms,p99_latency_ms,duration_sec,ingest_percentage,status,error_reason,mode,datafusion_repo,datafusion_branch"
+CSV_HEADERS="date,run_id,engine,min_throughput,mean_throughput,median_throughput,max_throughput,error_rate,p50_latency_ms,p99_latency_ms,duration_sec,ingest_percentage,status,error_reason,mode,parquet_repo,parquet_branch"
 
 extract_metric() {
   local csv_file="$1"
@@ -55,12 +55,12 @@ parse_and_store_results() {
   }
 
   # Parse results for both engines
-  local df_metrics lu_metrics
-  df_metrics=$(parse_osb_results "datafusion")
+  local pq_metrics lu_metrics
+  pq_metrics=$(parse_osb_results "parquet")
   lu_metrics=$(parse_osb_results "lucene")
 
   # Append rows for both engines
-  echo "${date_str},${run_id},datafusion,${df_metrics},${duration_sec},${CONFIG_INGEST_PERCENTAGE},success,,${mode},${CONFIG_DATAFUSION_REPO},${CONFIG_DATAFUSION_BRANCH}" >> "$local_csv"
+  echo "${date_str},${run_id},parquet,${pq_metrics},${duration_sec},${CONFIG_INGEST_PERCENTAGE},success,,${mode},${CONFIG_PARQUET_REPO},${CONFIG_PARQUET_BRANCH}" >> "$local_csv"
   echo "${date_str},${run_id},lucene,${lu_metrics},${duration_sec},${CONFIG_INGEST_PERCENTAGE},success,,${mode},${CONFIG_LUCENE_REPO},${CONFIG_LUCENE_BRANCH}" >> "$local_csv"
 
   # Upload back to S3
@@ -81,7 +81,7 @@ record_failure() {
     echo "$CSV_HEADERS" > "$local_csv"
   }
 
-  echo "${date_str},${run_id},datafusion,0,0,0,0,0,0,0,0,${CONFIG_INGEST_PERCENTAGE},failed,${error_reason},${mode},${CONFIG_DATAFUSION_REPO},${CONFIG_DATAFUSION_BRANCH}" >> "$local_csv"
+  echo "${date_str},${run_id},parquet,0,0,0,0,0,0,0,0,${CONFIG_INGEST_PERCENTAGE},failed,${error_reason},${mode},${CONFIG_PARQUET_REPO},${CONFIG_PARQUET_BRANCH}" >> "$local_csv"
   echo "${date_str},${run_id},lucene,0,0,0,0,0,0,0,0,${CONFIG_INGEST_PERCENTAGE},failed,${error_reason},${mode},${CONFIG_LUCENE_REPO},${CONFIG_LUCENE_BRANCH}" >> "$local_csv"
 
   aws s3 cp "$local_csv" "$CSV_S3_PATH"

@@ -5,28 +5,28 @@
 #   bash test-benchmark-only.sh <ip> <engine>
 #
 # Example:
-#   bash test-benchmark-only.sh 172.31.84.155 datafusion
+#   bash test-benchmark-only.sh 172.31.84.155 parquet
 #   bash test-benchmark-only.sh 172.31.83.3 lucene
 
 set -euo pipefail
 
 if [ $# -lt 2 ]; then
   echo "Usage: bash test-benchmark-only.sh <ip> <engine>"
-  echo "  engine: datafusion or lucene"
+  echo "  engine: parquet or lucene"
   exit 1
 fi
 
 HOST="$1"
 ENGINE="$2"
 
-if [ "$ENGINE" = "datafusion" ]; then
-  WORKLOAD_PATH="$HOME/datafusion-workloads/clickbench"
+if [ "$ENGINE" = "parquet" ]; then
+  WORKLOAD_PATH="$HOME/parquet-workloads/clickbench"
   TEST_PROC="datafusion-ppl"
 elif [ "$ENGINE" = "lucene" ]; then
   WORKLOAD_PATH="$HOME/lucene-workloads/clickbench"
   TEST_PROC="dsl-clickbench"
 else
-  echo "Unknown engine: $ENGINE (use datafusion or lucene)"
+  echo "Unknown engine: $ENGINE (use parquet or lucene)"
   exit 1
 fi
 

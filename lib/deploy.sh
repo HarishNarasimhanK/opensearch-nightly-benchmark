@@ -74,6 +74,7 @@ deploy_cdk_stack() {
     -c parquetWorkloadBranch="$CONFIG_PARQUET_WORKLOAD_BRANCH" \
     -c luceneWorkloadRepo="$CONFIG_LUCENE_WORKLOAD_REPO" \
     -c luceneWorkloadBranch="$CONFIG_LUCENE_WORKLOAD_BRANCH" \
+    -c parquetLuceneEnabled=false \
     -c ingestPercentage="$CONFIG_INGEST_PERCENTAGE"
 }
 
