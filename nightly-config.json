@@ -6,9 +6,9 @@
   "luceneRepo": "https://github.com/opensearch-project/OpenSearch.git",
   "luceneBranch": "main",
   "datafusionWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
-  "datafusionWorkloadBranch": "nightly",
+  "datafusionWorkloadBranch": "indexed_parquet",
   "luceneWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
-  "luceneWorkloadBranch": "nightly-lucene",
+  "luceneWorkloadBranch": "lucene",
   "ingestPercentage": 100,
   "runIntervalHours": 24,
   "s3Bucket": "opensearch-nightly-500923064869"
