@@ -66,7 +66,6 @@ deploy_cdk_stack() {
     --require-approval never \
     --outputs-file "$HOME/nightly-cdk-outputs.json" \
     -c benchmarkEnabled=false \
-    -c runId="$run_id" \
     -c runIdPrefix=nightly \
     -c s3Bucket="$CONFIG_S3_BUCKET" \
     -c datafusionBranch="$CONFIG_DATAFUSION_BRANCH" \
