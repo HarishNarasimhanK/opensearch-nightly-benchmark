@@ -55,8 +55,7 @@ while true; do
     exit 1
   fi
 
-  # 3. Generate RUN_ID placeholder (will be overwritten by CDK output)
-  RUN_ID="pending"
+  # 3. Log start
   echo "============================================"
   echo "Starting run (mode: $CONFIG_MODE)"
   echo "============================================"
