@@ -81,8 +81,8 @@ while true; do
   TEARDOWN_NEEDED=true
   START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  if ! deploy_cdk_stack "$RUN_ID"; then
-    record_failure "$RUN_ID" "CDK deploy failed"
+  if ! deploy_cdk_stack; then
+    record_failure "${RUN_ID:-unknown}" "CDK deploy failed"
     teardown_stack || true
     TEARDOWN_NEEDED=false
     release_lock
@@ -104,8 +104,8 @@ while true; do
   fi
 
   # 9. Wait for cluster health
-  if ! wait_for_health "$DATAFUSION_IP" "datafusion"; then
-    record_failure "$RUN_ID" "Health check timeout: datafusion"
+  if ! wait_for_health "$PARQUET_IP" "parquet"; then
+    record_failure "$RUN_ID" "Health check timeout: parquet"
     teardown_stack || true
     TEARDOWN_NEEDED=false
     release_lock
@@ -125,12 +125,12 @@ while true; do
   fi
 
   # 10. Run OSB indexing benchmark (both engines)
-  DF_FAILED=false
+  PQ_FAILED=false
   LU_FAILED=false
 
-  if ! run_indexing_benchmark "$DATAFUSION_IP" "datafusion" "$RUN_ID"; then
-    echo "WARNING: DataFusion benchmark failed"
-    DF_FAILED=true
+  if ! run_indexing_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
+    echo "WARNING: Parquet benchmark failed"
+    PQ_FAILED=true
   fi
 
   if ! run_indexing_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
@@ -141,12 +141,12 @@ while true; do
   END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
   # 10b. Trigger data folder upload (writes BENCHMARK_COMPLETE flag → poller on each instance uploads data)
-  if [ "$DF_FAILED" = false ] || [ "$LU_FAILED" = false ]; then
+  if [ "$PQ_FAILED" = false ] || [ "$LU_FAILED" = false ]; then
     trigger_data_upload || echo "WARNING: Failed to trigger data upload"
   fi
 
   # 11. Parse results + store
-  if [ "$DF_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
+  if [ "$PQ_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
     record_failure "$RUN_ID" "Both engines failed"
   else
     parse_and_store_results "$RUN_ID" "$CONFIG_MODE" "$START_TIME" "$END_TIME"
