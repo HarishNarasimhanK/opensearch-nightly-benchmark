@@ -124,36 +124,75 @@ while true; do
     continue
   fi
 
-  # 10. Run OSB indexing benchmark (both engines)
+  if ! wait_for_health "$PARQUET_LUCENE_IP" "parquetLucene"; then
+    record_failure "$RUN_ID" "Health check timeout: parquetLucene"
+    teardown_stack || true
+    TEARDOWN_NEEDED=false
+    release_lock
+    if [ "$CONFIG_MODE" = "adhoc" ]; then exit 1; fi
+    sleep $((CONFIG_RUN_INTERVAL_HOURS * 3600))
+    continue
+  fi
+
+  # 10. Run OSB indexing benchmark (all engines)
   PQ_FAILED=false
+  PQL_FAILED=false
   LU_FAILED=false
 
-  if ! run_indexing_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
+  if ! run_clickbench_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
     echo "WARNING: Parquet benchmark failed"
     PQ_FAILED=true
   fi
 
-  if ! run_indexing_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
+  if ! run_clickbench_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
+    echo "WARNING: ParquetLucene benchmark failed"
+    PQL_FAILED=true
+  fi
+
+  if ! run_clickbench_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
     echo "WARNING: Lucene benchmark failed"
     LU_FAILED=true
   fi
 
   END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+  # 10c. Run http_logs benchmark (all engines — no delete, coexists with clickbench data)
+  PQ_HL_FAILED=false
+  PQL_HL_FAILED=false
+  LU_HL_FAILED=false
+
+  if ! run_httplogs_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
+    echo "WARNING: Parquet http_logs benchmark failed"
+    PQ_HL_FAILED=true
+  fi
+
+  if ! run_httplogs_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
+    echo "WARNING: ParquetLucene http_logs benchmark failed"
+    PQL_HL_FAILED=true
+  fi
+
+  if ! run_httplogs_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
+    echo "WARNING: Lucene http_logs benchmark failed"
+    LU_HL_FAILED=true
+  fi
+
   # 10b. Trigger data folder upload (writes BENCHMARK_COMPLETE flag → poller on each instance uploads data)
-  if [ "$PQ_FAILED" = false ] || [ "$LU_FAILED" = false ]; then
+  if [ "$PQ_FAILED" = false ] || [ "$PQL_FAILED" = false ] || [ "$LU_FAILED" = false ]; then
     trigger_data_upload || echo "WARNING: Failed to trigger data upload"
   fi
 
   # 11. Parse results + store
-  if [ "$PQ_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
-    record_failure "$RUN_ID" "Both engines failed"
+  if [ "$PQ_FAILED" = true ] && [ "$PQL_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
+    record_failure "$RUN_ID" "All engines failed"
   else
     parse_and_store_results "$RUN_ID" "$CONFIG_MODE" "$START_TIME" "$END_TIME"
   fi
 
   # 12. Publish CloudWatch metrics
   publish_cloudwatch_metrics "$RUN_ID"
+
+  # 12b. Parse and store http_logs results
+  parse_and_store_httplogs_results "$RUN_ID" "$CONFIG_MODE"
 
   # 13. Generate + upload trend chart
   local_csv="/tmp/indexing-throughput.csv"

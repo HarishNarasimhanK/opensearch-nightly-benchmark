@@ -49,8 +49,9 @@ def detect_regressions(throughputs, rolling_avgs, threshold=0.10):
 def generate_html(rows, output_path):
     """Generate self-contained Plotly HTML trend chart."""
     # Separate by engine
-    pq_rows = [r for r in rows if r.get("engine") == "parquet"]
+    pq_rows = [r for r in rows if r.get("engine") in ("parquet", "datafusion")]
     lu_rows = [r for r in rows if r.get("engine") == "lucene"]
+    pql_rows = [r for r in rows if r.get("engine") == "parquetLucene"]
 
     # Extract data — use mean_throughput for the trend line
     pq_dates = [r["date"] for r in pq_rows]
@@ -67,11 +68,20 @@ def generate_html(rows, output_path):
     ]
     lu_modes = [r.get("mode", "nightly") for r in lu_rows]
 
+    pql_dates = [r["date"] for r in pql_rows]
+    pql_throughputs = [
+        float(r["mean_throughput"]) if r.get("status") == "success" and r.get("mean_throughput") and float(r["mean_throughput"]) > 0 else None
+        for r in pql_rows
+    ]
+    pql_modes = [r.get("mode", "nightly") for r in pql_rows]
+
     # Compute regressions on valid (non-None) values
     pq_valid = [t for t in pq_throughputs if t is not None]
     lu_valid = [t for t in lu_throughputs if t is not None]
+    pql_valid = [t for t in pql_throughputs if t is not None]
     pq_rolling = compute_rolling_average(pq_valid)
     lu_rolling = compute_rolling_average(lu_valid)
+    pql_rolling = compute_rolling_average(pql_valid)
     pq_regressions = detect_regressions(pq_valid, pq_rolling)
     lu_regressions = detect_regressions(lu_valid, lu_rolling)
 
@@ -132,6 +142,26 @@ def generate_html(rows, output_path):
         "connectgaps": False,
     })
 
+    # ParquetLucene trace
+    pql_symbols = ["diamond" if m == "adhoc" else "circle" for m in pql_modes]
+    pql_hover = [
+        f"Date: {r['date']}<br>Engine: parquetLucene<br>"
+        f"Mean: {float(r.get('mean_throughput', 0)):.0f} docs/s<br>"
+        f"Mode: {r.get('mode', 'nightly')}"
+        for r in pql_rows
+    ]
+    traces.append({
+        "x": pql_dates,
+        "y": [t if t else None for t in pql_throughputs],
+        "mode": "lines+markers",
+        "name": "ParquetLucene",
+        "line": {"color": "#2ECC71", "width": 2},
+        "marker": {"color": "#2ECC71", "size": 8, "symbol": pql_symbols},
+        "text": pql_hover,
+        "hoverinfo": "text",
+        "connectgaps": False,
+    })
+
     # Regression markers for Parquet
     if pq_regressions:
         valid_dates = [pq_dates[i] for i in range(len(pq_dates)) if pq_throughputs[i] is not None]
@@ -163,7 +193,7 @@ def generate_html(rows, output_path):
         })
 
     layout = {
-        "title": "Nightly Indexing Throughput: Parquet vs Lucene",
+        "title": "Nightly Indexing Throughput: Parquet vs ParquetLucene vs Lucene",
         "xaxis": {"title": "Date", "type": "date"},
         "yaxis": {"title": "Mean Indexing Throughput (docs/sec)"},
         "legend": {"x": 0.01, "y": 0.99},
@@ -174,21 +204,25 @@ def generate_html(rows, output_path):
     # Write self-contained HTML
     setup_info = """
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px 24px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; font-size: 13px; color: #495057;">
-      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark - Parquet vs Lucene</h2>
+      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark — Parquet vs ParquetLucene vs Lucene</h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px;">
-        <div><b>Instance:</b> r7g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
-        <div><b>EBS:</b> 500GB gp3, 6000 IOPS, 500 MB/s throughput</div>
-        <div><b>JVM Heap:</b> 32GB</div>
-        <div><b>Dataset:</b> ClickBench (100M docs)</div>
-        <div><b>Workload:</b> index-append only (no queries)</div>
+        <div><b>OpenSearch Instance:</b> r7g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
+        <div><b>Benchmark Client:</b> r7g.8xlarge (32 vCPU, 256GB RAM, ARM64)</div>
+        <div><b>EBS:</b> 1000GB gp3, 12000 IOPS, 500 MB/s throughput</div>
+        <div><b>JVM Heap:</b> Parquet/ParquetLucene: 16GB, Lucene: 32GB</div>
+        <div><b>Dataset:</b> ClickBench (100M docs, full ingest)</div>
+        <div><b>Workload:</b> delete-index → create-index → index-append</div>
         <div><b>Shards:</b> 1 primary, 0 replicas</div>
-        <div><b>Bulk Clients:</b> Parquet: 50, Lucene: 8 (OSB side)</div>
-        <div><b>Parquet:</b> opensearch-project/OpenSearch main (Parquet engine)</div>
-        <div><b>Lucene:</b> opensearch-project/OpenSearch main (standard engine)</div>
+        <div><b>Bulk Clients:</b> Parquet/ParquetLucene: 50, Lucene: 8</div>
+        <div><b>Source:</b> opensearch-project/OpenSearch@main (all engines)</div>
+        <div><b>Parquet:</b> parquet-only (secondary_data_formats=[])</div>
+        <div><b>ParquetLucene:</b> parquet + lucene secondary (indexed_parquet)</div>
+        <div><b>Lucene:</b> standard engine (pluggable.dataformat=false)</div>
+        <div><b>PPL Endpoint:</b> /_plugins/_ppl (SQL plugin)</div>
         <div><b>Region:</b> us-east-1</div>
       </div>
       <div style="margin-top: 8px; font-size: 11px; color: #6c757d;">
-        [*] Circle = nightly run &nbsp; [&lt;&gt;] Diamond = adhoc run &nbsp; [O] Red circle = regression (&gt;10% drop from 7-day avg)
+        [●] Circle = nightly run &nbsp; [◆] Diamond = adhoc run &nbsp; [○] Red circle = regression (&gt;10% drop from 7-day avg)
       </div>
     </div>
     """

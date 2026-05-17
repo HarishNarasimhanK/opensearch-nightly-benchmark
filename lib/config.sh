@@ -53,7 +53,9 @@ load_config() {
   CONFIG_S3_BUCKET=$(jq -r '.s3Bucket // "opensearch-nightly-500923064869"' "$config_file")
   CONFIG_MODE=$(jq -r '.mode // "nightly"' "$config_file")
   CONFIG_PARQUET_WORKLOAD_REPO=$(jq -r '.parquetWorkloadRepo // "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git"' "$config_file")
-  CONFIG_PARQUET_WORKLOAD_BRANCH=$(jq -r '.parquetWorkloadBranch // "nightly"' "$config_file")
+  CONFIG_PARQUET_WORKLOAD_BRANCH=$(jq -r '.parquetWorkloadBranch // "parquet"' "$config_file")
+  CONFIG_PARQUET_LUCENE_WORKLOAD_REPO=$(jq -r '.parquetLuceneWorkloadRepo // "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git"' "$config_file")
+  CONFIG_PARQUET_LUCENE_WORKLOAD_BRANCH=$(jq -r '.parquetLuceneWorkloadBranch // "indexed_parquet"' "$config_file")
   CONFIG_LUCENE_WORKLOAD_REPO=$(jq -r '.luceneWorkloadRepo // "https://github.com/opensearch-project/opensearch-benchmark-workloads.git"' "$config_file")
   CONFIG_LUCENE_WORKLOAD_BRANCH=$(jq -r '.luceneWorkloadBranch // "main"' "$config_file")
 
@@ -78,6 +80,8 @@ load_config() {
   export CONFIG_MODE
   export CONFIG_PARQUET_WORKLOAD_REPO
   export CONFIG_PARQUET_WORKLOAD_BRANCH
+  export CONFIG_PARQUET_LUCENE_WORKLOAD_REPO
+  export CONFIG_PARQUET_LUCENE_WORKLOAD_BRANCH
   export CONFIG_LUCENE_WORKLOAD_REPO
   export CONFIG_LUCENE_WORKLOAD_BRANCH
 
