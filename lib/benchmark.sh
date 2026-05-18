@@ -143,7 +143,7 @@ run_benchmark() {
     --kill-running-processes \
     --results-format=csv \
     --results-file="$results_file" \
-    --workload-params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
+    --workload-params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}, \"distribution_version\": \"3.7.0\"}"
 
   local exit_code=$?
 
