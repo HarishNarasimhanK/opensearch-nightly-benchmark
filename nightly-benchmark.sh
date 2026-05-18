@@ -1,13 +1,14 @@
 #!/bin/bash
-# nightly-benchmark.sh — Main orchestration script for the nightly indexing benchmark pipeline.
+# nightly-benchmark.sh — Nightly indexing benchmark pipeline.
 #
 # Usage:
-#   bash nightly-benchmark.sh           # Adhoc mode (single run, then exit)
-#   bash nightly-benchmark.sh --nightly # Nightly mode (loop with sleep interval)
+#   bash nightly-benchmark.sh --workload=clickbench    # Single run with clickbench
+#   bash nightly-benchmark.sh --workload=http_logs     # Single run with http_logs
+#   bash nightly-benchmark.sh --workload=clickbench --nightly  # Loop mode
 #
-# Workload selection is controlled by nightly-config.json "workload" field:
-#   "clickbench" — ClickBench dataset (100M docs, analytics queries)
-#   "http_logs"  — HTTP logs dataset (append-only, no delete)
+# Each run deploys a SEPARATE stack per workload (no resource overlap):
+#   --workload=clickbench → stack: OpenSearchCodeGuruStack-nightly-clickbench
+#   --workload=http_logs  → stack: OpenSearchCodeGuruStack-nightly-http_logs
 
 set -euo pipefail
 
@@ -32,55 +33,65 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [ -z "$WORKLOAD_OVERRIDE" ]; then
+  echo "ERROR: --workload is required. Use --workload=clickbench or --workload=http_logs"
+  exit 1
+fi
+
 # --- Cleanup function (trap) ---
 cleanup_on_exit() {
   local exit_code=$?
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Cleanup triggered (exit code: $exit_code)"
-
   if [ "$TEARDOWN_NEEDED" = true ]; then
     teardown_stack || true
   fi
-
   release_lock
 }
 
 # --- Main loop ---
 while true; do
-  # 1. Read config (re-read each iteration for hot-reload)
+  # 1. Read config
   load_config "$SCRIPT_DIR/nightly-config.json"
 
-  # Override mode if --nightly was passed
+  # Override workload from CLI (required)
+  export CONFIG_WORKLOAD="$WORKLOAD_OVERRIDE"
+
+  # Set stack suffix to include workload name for isolation
+  export NIGHTLY_STACK_SUFFIX="nightly-${CONFIG_WORKLOAD}"
+
   if [ -n "$MODE_OVERRIDE" ]; then
     CONFIG_MODE="$MODE_OVERRIDE"
   else
     CONFIG_MODE="adhoc"
   fi
 
-  # 2. Acquire lock
+  # 2. Acquire lock (workload-specific lock file)
+  LOCK_FILE="/tmp/nightly-benchmark-${CONFIG_WORKLOAD}.lock"
   if ! acquire_lock; then
-    echo "Another run is active. Exiting."
+    echo "Another ${CONFIG_WORKLOAD} run is active. Exiting."
     exit 1
   fi
 
   # 3. Log start
   echo "============================================"
-  echo "Starting run (mode: $CONFIG_MODE, workload: $CONFIG_WORKLOAD)"
+  echo "  Nightly Benchmark"
+  echo "  Mode:     $CONFIG_MODE"
+  echo "  Workload: $CONFIG_WORKLOAD"
+  echo "  Stack:    OpenSearchCodeGuruStack-${NIGHTLY_STACK_SUFFIX}"
   echo "============================================"
 
-  # 4. Set trap for cleanup
+  # 4. Set trap
   TEARDOWN_NEEDED=false
   trap 'cleanup_on_exit' EXIT ERR INT TERM
 
-  # 5. Pre-check: destroy existing stack
+  # 5. Pre-check: destroy existing stack for THIS workload
   precheck_destroy_existing
 
-  # 6. Git pull CDK repo
+  # 6. Git pull CDK repo + clone workloads
   git_pull_cdk_repo
-
-  # 6b. Ensure workloads are cloned
   ensure_workloads_cloned
 
-  # 6c. Clean stale BENCHMARK_COMPLETE flag
+  # 6c. Clean stale flag
   aws s3 rm "s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE" 2>/dev/null || true
 
   # 7. Deploy CDK stack
@@ -98,7 +109,7 @@ while true; do
     continue
   fi
 
-  # 8. Extract IPs from outputs
+  # 8. Extract IPs
   if ! parse_cdk_outputs; then
     record_failure "$RUN_ID" "Failed to parse CDK outputs"
     teardown_stack || true
@@ -140,71 +151,54 @@ while true; do
     continue
   fi
 
-  # 10. Run benchmark for each workload
-  # If --workload= was passed, run only that one. Otherwise run all from config.
-  if [ -n "$WORKLOAD_OVERRIDE" ]; then
-    WORKLOADS_TO_RUN="$WORKLOAD_OVERRIDE"
-  else
-    WORKLOADS_TO_RUN="$CONFIG_WORKLOAD"
+  # 10. Run benchmark (single workload, all 3 engines)
+  PQ_FAILED=false
+  PQL_FAILED=false
+  LU_FAILED=false
+
+  if ! run_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
+    echo "WARNING: Parquet ${CONFIG_WORKLOAD} benchmark failed"
+    PQ_FAILED=true
   fi
 
-  IFS=',' read -ra WORKLOAD_LIST <<< "$WORKLOADS_TO_RUN"
+  if ! run_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
+    echo "WARNING: ParquetLucene ${CONFIG_WORKLOAD} benchmark failed"
+    PQL_FAILED=true
+  fi
 
-  for CURRENT_WORKLOAD in "${WORKLOAD_LIST[@]}"; do
-    CURRENT_WORKLOAD=$(echo "$CURRENT_WORKLOAD" | xargs)  # trim whitespace
-    export CONFIG_WORKLOAD="$CURRENT_WORKLOAD"
-
-    echo ""
-    echo ">>> Running ${CURRENT_WORKLOAD} benchmark on all engines..."
-
-    PQ_FAILED=false
-    PQL_FAILED=false
-    LU_FAILED=false
-
-    if ! run_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
-      echo "WARNING: Parquet ${CURRENT_WORKLOAD} benchmark failed"
-      PQ_FAILED=true
-    fi
-
-    if ! run_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
-      echo "WARNING: ParquetLucene ${CURRENT_WORKLOAD} benchmark failed"
-      PQL_FAILED=true
-    fi
-
-    if ! run_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
-      echo "WARNING: Lucene ${CURRENT_WORKLOAD} benchmark failed"
-      LU_FAILED=true
-    fi
-
-    # Store results for this workload
-    if [ "$PQ_FAILED" = true ] && [ "$PQL_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
-      record_failure "$RUN_ID" "All engines failed (${CURRENT_WORKLOAD})"
-    else
-      parse_and_store_results "$RUN_ID" "$CONFIG_MODE" "$START_TIME" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    fi
-
-    # Generate trend chart for this workload
-    local_csv="/tmp/indexing-throughput-${CURRENT_WORKLOAD}.csv"
-    if [ -f "$local_csv" ]; then
-      python3 "$SCRIPT_DIR/generate-nightly-trend.py" \
-        --csv "$local_csv" \
-        --output "/tmp/nightly-indexing-trend-${CURRENT_WORKLOAD}.html" \
-        --workload "$CURRENT_WORKLOAD" && \
-      aws s3 cp "/tmp/nightly-indexing-trend-${CURRENT_WORKLOAD}.html" \
-        "s3://$CONFIG_S3_BUCKET/nightly/nightly-indexing-trend-${CURRENT_WORKLOAD}.html" || \
-      echo "WARNING: Trend chart generation/upload failed for ${CURRENT_WORKLOAD}"
-    fi
-  done
+  if ! run_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
+    echo "WARNING: Lucene ${CONFIG_WORKLOAD} benchmark failed"
+    LU_FAILED=true
+  fi
 
   END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # 10b. Trigger data folder upload
+  # 10b. Trigger data upload
   trigger_data_upload || echo "WARNING: Failed to trigger data upload"
 
-  # 11. Publish CloudWatch metrics
+  # 11. Store results
+  if [ "$PQ_FAILED" = true ] && [ "$PQL_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
+    record_failure "$RUN_ID" "All engines failed (${CONFIG_WORKLOAD})"
+  else
+    parse_and_store_results "$RUN_ID" "$CONFIG_MODE" "$START_TIME" "$END_TIME"
+  fi
+
+  # 12. Publish CloudWatch metrics
   publish_cloudwatch_metrics "$RUN_ID"
 
-  # 14. Do NOT teardown — next run's precheck_destroy_existing handles it
+  # 13. Generate trend chart
+  local_csv="/tmp/indexing-throughput-${CONFIG_WORKLOAD}.csv"
+  if [ -f "$local_csv" ]; then
+    python3 "$SCRIPT_DIR/generate-nightly-trend.py" \
+      --csv "$local_csv" \
+      --output "/tmp/nightly-indexing-trend-${CONFIG_WORKLOAD}.html" \
+      --workload "$CONFIG_WORKLOAD" && \
+    aws s3 cp "/tmp/nightly-indexing-trend-${CONFIG_WORKLOAD}.html" \
+      "s3://$CONFIG_S3_BUCKET/nightly/nightly-indexing-trend-${CONFIG_WORKLOAD}.html" || \
+    echo "WARNING: Trend chart generation/upload failed"
+  fi
+
+  # 14. Do NOT teardown — next run's precheck handles it
   TEARDOWN_NEEDED=false
 
   # 15. Release lock
@@ -212,7 +206,7 @@ while true; do
 
   # 16. Exit or sleep
   if [ "$CONFIG_MODE" = "adhoc" ]; then
-    echo "Adhoc run complete. Exiting."
+    echo "Adhoc run complete (${CONFIG_WORKLOAD}). Exiting."
     exit 0
   fi
 

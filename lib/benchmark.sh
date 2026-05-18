@@ -12,7 +12,6 @@ ensure_workloads_cloned() {
   local lu_repo="${CONFIG_LUCENE_WORKLOAD_REPO:-https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git}"
   local lu_branch="${CONFIG_LUCENE_WORKLOAD_BRANCH:-lucene}"
 
-  # Always fresh clone to ensure correct repo/branch from config
   rm -rf "$HOME/parquet-workloads"
   echo "Cloning workloads for parquet: ${pq_repo}@${pq_branch}..."
   git clone "$pq_repo" -b "$pq_branch" "$HOME/parquet-workloads"
@@ -48,11 +47,11 @@ wait_for_health() {
     sleep 30
   done
 
-  echo "ERROR: $engine cluster did not become healthy (gave up after $max_attempts attempts)"
+  echo "ERROR: $engine cluster did not become healthy"
   return 1
 }
 
-# Unified benchmark function — uses CONFIG_WORKLOAD to decide workload path and test procedure
+# Unified benchmark function
 run_benchmark() {
   local host="$1"
   local engine="$2"
@@ -91,11 +90,49 @@ run_benchmark() {
 
   local results_file="/tmp/nightly-result-${engine}-${workload}.csv"
 
-  echo "Running ${workload} benchmark against $engine ($host:9200)..."
-  echo "  Test procedure: $test_procedure"
-  echo "  Workload path: $workload_path"
-  echo "  Bulk clients: $bulk_clients"
-  echo "  Include tasks: $include_tasks"
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════════╗"
+  echo "║  BENCHMARK: ${engine} / ${workload}"
+  echo "╠══════════════════════════════════════════════════════════════════╣"
+  echo "║  Host:           ${host}:9200"
+  echo "║  Test Procedure: ${test_procedure}"
+  echo "║  Workload Path:  ${workload_path}"
+  echo "║  Bulk Clients:   ${bulk_clients}"
+  echo "║  Include Tasks:  ${include_tasks}"
+  echo "║  Ingest %:       ${CONFIG_INGEST_PERCENTAGE}"
+  echo "║  Results File:   ${results_file}"
+  echo "╚══════════════════════════════════════════════════════════════════╝"
+
+  # --- PRE-BENCHMARK: Show opensearch.yml config ---
+  echo ""
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "  [PRE] OpenSearch Configuration (opensearch.yml via API)"
+  echo "──────────────────────────────────────────────────────────────────"
+  curl -s "http://${host}:9200/_cluster/settings?include_defaults=true&flat_settings=true&pretty" 2>/dev/null | grep -E "cluster.name|node.name|discovery|network|pluggable|composite|parquet" | head -20
+  echo ""
+
+  # --- PRE-BENCHMARK: Cluster health ---
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "  [PRE] Cluster Health"
+  echo "──────────────────────────────────────────────────────────────────"
+  curl -s "http://${host}:9200/_cluster/health?pretty" 2>/dev/null
+  echo ""
+
+  # --- RUN OSB ---
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "  [RUN] opensearch-benchmark"
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "CMD: opensearch-benchmark run \\"
+  echo "  --pipeline=benchmark-only \\"
+  echo "  --workload-path=\"${workload_path}\" \\"
+  echo "  --target-hosts=\"${host}:9200\" \\"
+  echo "  --test-procedure=\"${test_procedure}\" \\"
+  echo "  --include-tasks=\"${include_tasks}\" \\"
+  echo "  --kill-running-processes \\"
+  echo "  --results-format=csv \\"
+  echo "  --results-file=\"${results_file}\" \\"
+  echo "  --workload-params='{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}'"
+  echo ""
 
   opensearch-benchmark run \
     --pipeline=benchmark-only \
@@ -109,17 +146,45 @@ run_benchmark() {
     --workload-params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
 
   local exit_code=$?
+
+  # --- POST-BENCHMARK: Cluster health ---
+  echo ""
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "  [POST] Cluster Health"
+  echo "──────────────────────────────────────────────────────────────────"
+  curl -s "http://${host}:9200/_cluster/health?pretty" 2>/dev/null
+  echo ""
+
+  # --- POST-BENCHMARK: Index settings ---
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "  [POST] Index Settings"
+  echo "──────────────────────────────────────────────────────────────────"
+  curl -s "http://${host}:9200/_all/_settings?pretty" 2>/dev/null | head -60
+  echo ""
+
+  # --- POST-BENCHMARK: _cat/indices ---
+  echo "──────────────────────────────────────────────────────────────────"
+  echo "  [POST] _cat/indices"
+  echo "──────────────────────────────────────────────────────────────────"
+  curl -s "http://${host}:9200/_cat/indices?v" 2>/dev/null
+  echo ""
+
+  # --- Result ---
+  echo "══════════════════════════════════════════════════════════════════"
   if [ $exit_code -eq 0 ]; then
-    echo "$engine ${workload} benchmark completed successfully."
+    echo "  ✅ ${engine} ${workload} benchmark PASSED"
   else
-    echo "ERROR: $engine ${workload} benchmark failed (exit code: $exit_code)"
+    echo "  ❌ ${engine} ${workload} benchmark FAILED (exit code: $exit_code)"
   fi
+  echo "══════════════════════════════════════════════════════════════════"
+  echo ""
+
   return $exit_code
 }
 
 trigger_data_upload() {
-  echo "Triggering data folder upload on Parquet + ParquetLucene + Lucene instances..."
+  echo "Triggering data folder upload on all instances..."
   echo "BENCHMARK_COMPLETE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | \
     aws s3 cp - "s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE"
-  echo "Flag written. Instances will upload data folders to s3://${CONFIG_S3_BUCKET}/runs/${RUN_ID}/data/{engine}/"
+  echo "Flag written → s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE"
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Lock file management — prevents concurrent runs
 
-LOCK_FILE="$HOME/nightly-benchmark.lock"
+LOCK_FILE="$HOME/nightly-benchmark-${CONFIG_WORKLOAD:-default}.lock"
 
 acquire_lock() {
   if [ -f "$LOCK_FILE" ]; then

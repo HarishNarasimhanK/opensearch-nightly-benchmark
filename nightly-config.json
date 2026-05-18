@@ -1,8 +1,8 @@
 {
   "cdkRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git",
   "cdkBranch": "main",
-  "parquetRepo": "https://github.com/opensearch-project/OpenSearch.git",
-  "parquetBranch": "main",
+  "parquetRepo": "https://github.com/HarishNarasimhanK/OpenSearch.git",
+  "parquetBranch": "fix-nodestat",
   "luceneRepo": "https://github.com/opensearch-project/OpenSearch.git",
   "luceneBranch": "main",
   "parquetWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
@@ -11,7 +11,7 @@
   "parquetLuceneWorkloadBranch": "indexed_parquet",
   "luceneWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
   "luceneWorkloadBranch": "lucene",
-  "workload": "clickbench,http_logs",
+  "workload": "clickbench",
   "ingestPercentage": 0.1,
   "runIntervalHours": 24,
   "s3Bucket": "opensearch-nightly-500923064869"
