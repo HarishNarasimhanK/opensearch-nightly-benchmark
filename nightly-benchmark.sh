@@ -56,8 +56,8 @@ while true; do
   # Override workload from CLI (required)
   export CONFIG_WORKLOAD="$WORKLOAD_OVERRIDE"
 
-  # Set stack suffix to include workload name for isolation
-  export NIGHTLY_STACK_SUFFIX="nightly-${CONFIG_WORKLOAD}"
+  # Set stack suffix to include workload name for isolation (sanitize for CloudFormation)
+  export NIGHTLY_STACK_SUFFIX="nightly-${CONFIG_WORKLOAD//_/-}"
 
   if [ -n "$MODE_OVERRIDE" ]; then
     CONFIG_MODE="$MODE_OVERRIDE"

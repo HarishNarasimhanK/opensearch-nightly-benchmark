@@ -12,7 +12,7 @@
   "luceneWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
   "luceneWorkloadBranch": "lucene",
   "workload": "clickbench",
-  "ingestPercentage": 0.1,
+  "ingestPercentage": 100,
   "runIntervalHours": 24,
   "s3Bucket": "opensearch-nightly-500923064869"
 }
