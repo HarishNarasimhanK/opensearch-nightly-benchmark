@@ -29,7 +29,7 @@ ensure_workloads_cloned() {
 wait_for_health() {
   local host="$1"
   local engine="$2"
-  local max_attempts=999999  # Effectively infinite — wait until health is green
+  local max_attempts=999999
 
   echo "Waiting for $engine cluster health at $host:9200..."
   for i in $(seq 1 $max_attempts); do
@@ -52,39 +52,57 @@ wait_for_health() {
   return 1
 }
 
-run_clickbench_benchmark() {
+# Unified benchmark function — uses CONFIG_WORKLOAD to decide workload path and test procedure
+run_benchmark() {
   local host="$1"
   local engine="$2"
   local run_id="$3"
+  local workload="${CONFIG_WORKLOAD:-clickbench}"
 
-  local test_procedure workload_path bulk_clients
+  local test_procedure workload_path bulk_clients include_tasks
+
+  # Determine workload path based on engine and workload type
   if [ "$engine" = "parquet" ]; then
-    test_procedure="datafusion-ppl"
-    workload_path="$HOME/parquet-workloads/clickbench"
+    workload_path="$HOME/parquet-workloads/${workload}"
     bulk_clients=50
   elif [ "$engine" = "parquetLucene" ]; then
-    test_procedure="datafusion-ppl"
-    workload_path="$HOME/parquetLucene-workloads/clickbench"
+    workload_path="$HOME/parquetLucene-workloads/${workload}"
     bulk_clients=50
   else
-    test_procedure="dsl-clickbench"
-    workload_path="$HOME/lucene-workloads/clickbench"
+    workload_path="$HOME/lucene-workloads/${workload}"
     bulk_clients=8
   fi
 
-  local results_file="/tmp/nightly-result-${engine}.csv"
+  # Determine test procedure based on workload and engine
+  if [ "$workload" = "clickbench" ]; then
+    if [ "$engine" = "lucene" ]; then
+      test_procedure="dsl-clickbench"
+    else
+      test_procedure="datafusion-ppl"
+    fi
+    include_tasks="delete-index,create-index,index-append"
+  elif [ "$workload" = "http_logs" ]; then
+    test_procedure="append-no-conflicts-index-only"
+    include_tasks="delete-index,create-index,index-append"
+  else
+    echo "ERROR: Unknown workload: $workload"
+    return 1
+  fi
 
-  echo "Running indexing benchmark against $engine ($host:9200)..."
+  local results_file="/tmp/nightly-result-${engine}-${workload}.csv"
+
+  echo "Running ${workload} benchmark against $engine ($host:9200)..."
   echo "  Test procedure: $test_procedure"
-  echo "  Workload: $workload_path"
+  echo "  Workload path: $workload_path"
   echo "  Bulk clients: $bulk_clients"
+  echo "  Include tasks: $include_tasks"
 
   opensearch-benchmark run \
     --pipeline=benchmark-only \
     --workload-path="$workload_path" \
     --target-hosts="${host}:9200" \
     --test-procedure="$test_procedure" \
-    --include-tasks="delete-index,create-index,index-append" \
+    --include-tasks="$include_tasks" \
     --kill-running-processes \
     --results-format=csv \
     --results-file="$results_file" \
@@ -92,62 +110,16 @@ run_clickbench_benchmark() {
 
   local exit_code=$?
   if [ $exit_code -eq 0 ]; then
-    echo "$engine benchmark completed successfully."
+    echo "$engine ${workload} benchmark completed successfully."
   else
-    echo "ERROR: $engine benchmark failed (exit code: $exit_code)"
+    echo "ERROR: $engine ${workload} benchmark failed (exit code: $exit_code)"
   fi
   return $exit_code
 }
 
 trigger_data_upload() {
-  # Writes the BENCHMARK_COMPLETE flag to S3, which signals the upload-data-on-complete.sh
-  # poller running on each OpenSearch instance to tar and upload the data folder.
   echo "Triggering data folder upload on Parquet + ParquetLucene + Lucene instances..."
   echo "BENCHMARK_COMPLETE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" | \
     aws s3 cp - "s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE"
   echo "Flag written. Instances will upload data folders to s3://${CONFIG_S3_BUCKET}/runs/${RUN_ID}/data/{engine}/"
-}
-
-run_httplogs_benchmark() {
-  local host="$1"
-  local engine="$2"
-  local run_id="$3"
-
-  local workload_path bulk_clients
-  if [ "$engine" = "parquet" ]; then
-    workload_path="$HOME/parquet-workloads/http_logs"
-    bulk_clients=50
-  elif [ "$engine" = "parquetLucene" ]; then
-    workload_path="$HOME/parquetLucene-workloads/http_logs"
-    bulk_clients=50
-  else
-    workload_path="$HOME/lucene-workloads/http_logs"
-    bulk_clients=8
-  fi
-
-  local results_file="/tmp/nightly-result-${engine}-httplogs.csv"
-
-  echo "Running http_logs benchmark against $engine ($host:9200)..."
-  echo "  Test procedure: append-no-conflicts-index-only"
-  echo "  Workload: $workload_path"
-  echo "  Bulk clients: $bulk_clients"
-
-  opensearch-benchmark run \
-    --pipeline=benchmark-only \
-    --workload-path="$workload_path" \
-    --target-hosts="${host}:9200" \
-    --test-procedure="append-no-conflicts-index-only" \
-    --include-tasks="create-index,index-append" \
-    --kill-running-processes \
-    --results-format=csv \
-    --results-file="$results_file" \
-    --workload-params="{\"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
-
-  local exit_code=$?
-  if [ $exit_code -eq 0 ]; then
-    echo "$engine http_logs benchmark completed successfully."
-  else
-    echo "ERROR: $engine http_logs benchmark failed (exit code: $exit_code)"
-  fi
-  return $exit_code
 }

@@ -4,6 +4,10 @@
 # Usage:
 #   bash nightly-benchmark.sh           # Adhoc mode (single run, then exit)
 #   bash nightly-benchmark.sh --nightly # Nightly mode (loop with sleep interval)
+#
+# Workload selection is controlled by nightly-config.json "workload" field:
+#   "clickbench" — ClickBench dataset (100M docs, analytics queries)
+#   "http_logs"  — HTTP logs dataset (append-only, no delete)
 
 set -euo pipefail
 
@@ -18,9 +22,12 @@ source "$SCRIPT_DIR/lib/teardown.sh"
 
 # --- Parse CLI args ---
 MODE_OVERRIDE=""
+WORKLOAD_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --nightly) MODE_OVERRIDE="nightly"; shift ;;
+    --workload=*) WORKLOAD_OVERRIDE="${1#--workload=}"; shift ;;
+    --workload) WORKLOAD_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -57,7 +64,7 @@ while true; do
 
   # 3. Log start
   echo "============================================"
-  echo "Starting run (mode: $CONFIG_MODE)"
+  echo "Starting run (mode: $CONFIG_MODE, workload: $CONFIG_WORKLOAD)"
   echo "============================================"
 
   # 4. Set trap for cleanup
@@ -73,8 +80,7 @@ while true; do
   # 6b. Ensure workloads are cloned
   ensure_workloads_cloned
 
-  # 6c. Clean stale BENCHMARK_COMPLETE flag from previous runs (otherwise upload-data-on-complete
-  #     pollers on the new instances would fire immediately on stale flag)
+  # 6c. Clean stale BENCHMARK_COMPLETE flag
   aws s3 rm "s3://${CONFIG_S3_BUCKET}/flags/BENCHMARK_COMPLETE" 2>/dev/null || true
 
   # 7. Deploy CDK stack
@@ -134,80 +140,71 @@ while true; do
     continue
   fi
 
-  # 10. Run OSB indexing benchmark (all engines)
-  PQ_FAILED=false
-  PQL_FAILED=false
-  LU_FAILED=false
-
-  if ! run_clickbench_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
-    echo "WARNING: Parquet benchmark failed"
-    PQ_FAILED=true
+  # 10. Run benchmark for each workload
+  # If --workload= was passed, run only that one. Otherwise run all from config.
+  if [ -n "$WORKLOAD_OVERRIDE" ]; then
+    WORKLOADS_TO_RUN="$WORKLOAD_OVERRIDE"
+  else
+    WORKLOADS_TO_RUN="$CONFIG_WORKLOAD"
   fi
 
-  if ! run_clickbench_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
-    echo "WARNING: ParquetLucene benchmark failed"
-    PQL_FAILED=true
-  fi
+  IFS=',' read -ra WORKLOAD_LIST <<< "$WORKLOADS_TO_RUN"
 
-  if ! run_clickbench_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
-    echo "WARNING: Lucene benchmark failed"
-    LU_FAILED=true
-  fi
+  for CURRENT_WORKLOAD in "${WORKLOAD_LIST[@]}"; do
+    CURRENT_WORKLOAD=$(echo "$CURRENT_WORKLOAD" | xargs)  # trim whitespace
+    export CONFIG_WORKLOAD="$CURRENT_WORKLOAD"
+
+    echo ""
+    echo ">>> Running ${CURRENT_WORKLOAD} benchmark on all engines..."
+
+    PQ_FAILED=false
+    PQL_FAILED=false
+    LU_FAILED=false
+
+    if ! run_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
+      echo "WARNING: Parquet ${CURRENT_WORKLOAD} benchmark failed"
+      PQ_FAILED=true
+    fi
+
+    if ! run_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
+      echo "WARNING: ParquetLucene ${CURRENT_WORKLOAD} benchmark failed"
+      PQL_FAILED=true
+    fi
+
+    if ! run_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
+      echo "WARNING: Lucene ${CURRENT_WORKLOAD} benchmark failed"
+      LU_FAILED=true
+    fi
+
+    # Store results for this workload
+    if [ "$PQ_FAILED" = true ] && [ "$PQL_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
+      record_failure "$RUN_ID" "All engines failed (${CURRENT_WORKLOAD})"
+    else
+      parse_and_store_results "$RUN_ID" "$CONFIG_MODE" "$START_TIME" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    fi
+
+    # Generate trend chart for this workload
+    local_csv="/tmp/indexing-throughput-${CURRENT_WORKLOAD}.csv"
+    if [ -f "$local_csv" ]; then
+      python3 "$SCRIPT_DIR/generate-nightly-trend.py" \
+        --csv "$local_csv" \
+        --output "/tmp/nightly-indexing-trend-${CURRENT_WORKLOAD}.html" \
+        --workload "$CURRENT_WORKLOAD" && \
+      aws s3 cp "/tmp/nightly-indexing-trend-${CURRENT_WORKLOAD}.html" \
+        "s3://$CONFIG_S3_BUCKET/nightly/nightly-indexing-trend-${CURRENT_WORKLOAD}.html" || \
+      echo "WARNING: Trend chart generation/upload failed for ${CURRENT_WORKLOAD}"
+    fi
+  done
 
   END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-  # 10c. Run http_logs benchmark (all engines — no delete, coexists with clickbench data)
-  PQ_HL_FAILED=false
-  PQL_HL_FAILED=false
-  LU_HL_FAILED=false
+  # 10b. Trigger data folder upload
+  trigger_data_upload || echo "WARNING: Failed to trigger data upload"
 
-  if ! run_httplogs_benchmark "$PARQUET_IP" "parquet" "$RUN_ID"; then
-    echo "WARNING: Parquet http_logs benchmark failed"
-    PQ_HL_FAILED=true
-  fi
-
-  if ! run_httplogs_benchmark "$PARQUET_LUCENE_IP" "parquetLucene" "$RUN_ID"; then
-    echo "WARNING: ParquetLucene http_logs benchmark failed"
-    PQL_HL_FAILED=true
-  fi
-
-  if ! run_httplogs_benchmark "$LUCENE_IP" "lucene" "$RUN_ID"; then
-    echo "WARNING: Lucene http_logs benchmark failed"
-    LU_HL_FAILED=true
-  fi
-
-  # 10b. Trigger data folder upload (writes BENCHMARK_COMPLETE flag → poller on each instance uploads data)
-  if [ "$PQ_FAILED" = false ] || [ "$PQL_FAILED" = false ] || [ "$LU_FAILED" = false ]; then
-    trigger_data_upload || echo "WARNING: Failed to trigger data upload"
-  fi
-
-  # 11. Parse results + store
-  if [ "$PQ_FAILED" = true ] && [ "$PQL_FAILED" = true ] && [ "$LU_FAILED" = true ]; then
-    record_failure "$RUN_ID" "All engines failed"
-  else
-    parse_and_store_results "$RUN_ID" "$CONFIG_MODE" "$START_TIME" "$END_TIME"
-  fi
-
-  # 12. Publish CloudWatch metrics
+  # 11. Publish CloudWatch metrics
   publish_cloudwatch_metrics "$RUN_ID"
 
-  # 12b. Parse and store http_logs results
-  parse_and_store_httplogs_results "$RUN_ID" "$CONFIG_MODE"
-
-  # 13. Generate + upload trend chart
-  local_csv="/tmp/indexing-throughput.csv"
-  if [ -f "$local_csv" ]; then
-    python3 "$SCRIPT_DIR/generate-nightly-trend.py" \
-      --csv "$local_csv" \
-      --output "/tmp/nightly-indexing-trend.html" && \
-    aws s3 cp "/tmp/nightly-indexing-trend.html" \
-      "s3://$CONFIG_S3_BUCKET/nightly/nightly-indexing-trend.html" || \
-    echo "WARNING: Trend chart generation/upload failed"
-  fi
-
-  # 14. NOTE: We do NOT teardown here. The next run's precheck_destroy_existing (step 5) will
-  #     destroy the previous run's stack. This gives the upload-data-on-complete pollers running
-  #     on each instance plenty of time (until the next run) to finish uploading data folders to S3.
+  # 14. Do NOT teardown — next run's precheck_destroy_existing handles it
   TEARDOWN_NEEDED=false
 
   # 15. Release lock

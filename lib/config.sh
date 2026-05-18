@@ -58,6 +58,7 @@ load_config() {
   CONFIG_PARQUET_LUCENE_WORKLOAD_BRANCH=$(jq -r '.parquetLuceneWorkloadBranch // "indexed_parquet"' "$config_file")
   CONFIG_LUCENE_WORKLOAD_REPO=$(jq -r '.luceneWorkloadRepo // "https://github.com/opensearch-project/opensearch-benchmark-workloads.git"' "$config_file")
   CONFIG_LUCENE_WORKLOAD_BRANCH=$(jq -r '.luceneWorkloadBranch // "main"' "$config_file")
+  CONFIG_WORKLOAD=$(jq -r '.workload // "clickbench"' "$config_file")
 
   # Clamp runIntervalHours to [4, 24]
   local raw_interval
@@ -84,10 +85,12 @@ load_config() {
   export CONFIG_PARQUET_LUCENE_WORKLOAD_BRANCH
   export CONFIG_LUCENE_WORKLOAD_REPO
   export CONFIG_LUCENE_WORKLOAD_BRANCH
+  export CONFIG_WORKLOAD
 
   echo "Config loaded:"
   echo "  Parquet:    ${CONFIG_PARQUET_REPO}@${CONFIG_PARQUET_BRANCH}"
   echo "  Lucene:     ${CONFIG_LUCENE_REPO}@${CONFIG_LUCENE_BRANCH}"
+  echo "  Workload:   ${CONFIG_WORKLOAD}"
   echo "  Ingest:     ${CONFIG_INGEST_PERCENTAGE}%"
   echo "  Interval:   ${CONFIG_RUN_INTERVAL_HOURS}h"
   echo "  S3 Bucket:  ${CONFIG_S3_BUCKET}"

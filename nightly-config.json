@@ -11,7 +11,8 @@
   "parquetLuceneWorkloadBranch": "indexed_parquet",
   "luceneWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
   "luceneWorkloadBranch": "lucene",
-  "ingestPercentage": 100,
+  "workload": "clickbench,http_logs",
+  "ingestPercentage": 0.1,
   "runIntervalHours": 24,
   "s3Bucket": "opensearch-nightly-500923064869"
 }

@@ -46,7 +46,7 @@ def detect_regressions(throughputs, rolling_avgs, threshold=0.10):
     return regressions
 
 
-def generate_html(rows, output_path):
+def generate_html(rows, output_path, workload="clickbench"):
     """Generate self-contained Plotly HTML trend chart."""
     # Separate by engine
     pq_rows = [r for r in rows if r.get("engine") in ("parquet", "datafusion")]
@@ -193,7 +193,7 @@ def generate_html(rows, output_path):
         })
 
     layout = {
-        "title": "Nightly Indexing Throughput: Parquet vs ParquetLucene vs Lucene",
+        "title": f"Nightly Indexing Throughput ({workload}): Parquet vs ParquetLucene vs Lucene",
         "xaxis": {"title": "Date", "type": "date"},
         "yaxis": {"title": "Mean Indexing Throughput (docs/sec)"},
         "legend": {"x": 0.01, "y": 0.99},
@@ -202,15 +202,17 @@ def generate_html(rows, output_path):
     }
 
     # Write self-contained HTML
-    setup_info = """
+    dataset_info = "ClickBench (100M docs)" if workload == "clickbench" else f"{workload} dataset"
+    setup_info = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px 24px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; font-size: 13px; color: #495057;">
-      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark — Parquet vs ParquetLucene vs Lucene</h2>
+      <h2 style="margin: 0 0 8px 0; font-size: 18px; color: #212529;">Nightly Indexing Benchmark ({workload}) — Parquet vs ParquetLucene vs Lucene</h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px;">
-        <div><b>OpenSearch Instance:</b> r7g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
-        <div><b>Benchmark Client:</b> r7g.8xlarge (32 vCPU, 256GB RAM, ARM64)</div>
+        <div><b>Parquet/ParquetLucene Instance:</b> r8g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
+        <div><b>Lucene Instance:</b> r8g.2xlarge (8 vCPU, 64GB RAM, ARM64)</div>
+        <div><b>Benchmark Client:</b> r8g.8xlarge (32 vCPU, 256GB RAM, ARM64)</div>
         <div><b>EBS:</b> 1000GB gp3, 12000 IOPS, 500 MB/s throughput</div>
         <div><b>JVM Heap:</b> Parquet/ParquetLucene: 16GB, Lucene: 32GB</div>
-        <div><b>Dataset:</b> ClickBench (100M docs, full ingest)</div>
+        <div><b>Dataset:</b> {dataset_info}</div>
         <div><b>Workload:</b> delete-index → create-index → index-append</div>
         <div><b>Shards:</b> 1 primary, 0 replicas</div>
         <div><b>Bulk Clients:</b> Parquet/ParquetLucene: 50, Lucene: 8</div>
@@ -218,7 +220,6 @@ def generate_html(rows, output_path):
         <div><b>Parquet:</b> parquet-only (secondary_data_formats=[])</div>
         <div><b>ParquetLucene:</b> parquet + lucene secondary (indexed_parquet)</div>
         <div><b>Lucene:</b> standard engine (pluggable.dataformat=false)</div>
-        <div><b>PPL Endpoint:</b> /_plugins/_ppl (SQL plugin)</div>
         <div><b>Region:</b> us-east-1</div>
       </div>
       <div style="margin-top: 8px; font-size: 11px; color: #6c757d;">
@@ -252,8 +253,9 @@ def generate_html(rows, output_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate nightly indexing throughput trend chart")
-    parser.add_argument("--csv", required=True, help="Path to indexing-throughput.csv")
+    parser.add_argument("--csv", required=True, help="Path to indexing-throughput-{workload}.csv")
     parser.add_argument("--output", required=True, help="Output HTML file path")
+    parser.add_argument("--workload", default=None, help="Workload name (auto-detected from CSV if not specified)")
     args = parser.parse_args()
 
     rows = load_csv(args.csv)
@@ -261,7 +263,12 @@ def main():
         print("No data in CSV. Skipping chart generation.")
         sys.exit(0)
 
-    generate_html(rows, args.output)
+    # Auto-detect workload from CSV data or filename
+    workload = args.workload
+    if not workload:
+        workload = rows[0].get("workload", "clickbench") if rows else "clickbench"
+
+    generate_html(rows, args.output, workload=workload)
 
 
 if __name__ == "__main__":
