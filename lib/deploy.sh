@@ -39,14 +39,14 @@ git_pull_cdk_repo() {
 precheck_destroy_existing() {
   local stack_status
   stack_status=$(aws cloudformation describe-stacks \
-    --stack-name "OpenSearchCodeGuruStack-nightly" \
+    --stack-name "OpenSearchCodeGuruStack-nightly-test" \
     --query "Stacks[0].StackStatus" \
     --output text 2>/dev/null || echo "DOES_NOT_EXIST")
 
   if [ "$stack_status" != "DOES_NOT_EXIST" ]; then
     echo "WARNING: Existing nightly stack found (status: $stack_status). Destroying..."
     cd "$CDK_DIR"
-    npx cdk destroy OpenSearchCodeGuruStack-nightly --force || true
+    npx cdk destroy OpenSearchCodeGuruStack-nightly-test --force || true
     sleep 30
   fi
 }
@@ -56,12 +56,12 @@ deploy_cdk_stack() {
 
   # Set STACK_SUFFIX in .env for this deploy
   if grep -q "^STACK_SUFFIX=" .env 2>/dev/null; then
-    sed -i'' -e 's/^STACK_SUFFIX=.*/STACK_SUFFIX=nightly/' .env
+    sed -i'' -e 's/^STACK_SUFFIX=.*/STACK_SUFFIX=nightly-test/' .env
   else
-    echo "STACK_SUFFIX=nightly" >> .env
+    echo "STACK_SUFFIX=nightly-test" >> .env
   fi
 
-  npx cdk deploy OpenSearchCodeGuruStack-nightly \
+  npx cdk deploy OpenSearchCodeGuruStack-nightly-test \
     --require-approval never \
     --outputs-file "$HOME/nightly-cdk-outputs.json" \
     -c benchmarkEnabled=false \
@@ -82,7 +82,7 @@ deploy_cdk_stack() {
 
 parse_cdk_outputs() {
   local outputs_file="$HOME/nightly-cdk-outputs.json"
-  local stack_key="OpenSearchCodeGuruStack-nightly"
+  local stack_key="OpenSearchCodeGuruStack-nightly-test"
 
   PARQUET_IP=$(jq -r ".\"$stack_key\".B4ParquetPrivateIp // empty" "$outputs_file")
   PARQUET_LUCENE_IP=$(jq -r ".\"$stack_key\".D4ParquetLucenePrivateIp // empty" "$outputs_file")
