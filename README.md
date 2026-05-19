@@ -5,7 +5,7 @@ Automated pipeline that deploys 3 OpenSearch engines (Parquet, Lucene, ParquetLu
 ## Nightly Instance
 
 ```
-ssh -i ~/.ssh/benchmark-mustang.pem ec2-user@ec2-44-202-145-93.compute-1.amazonaws.com
+we ssh -i ~/.ssh/<YOUR_KEY>.pem ec2-user@<NIGHTLY_INSTANCE_DNS>
 ```
 
 ## Quick Start
@@ -25,7 +25,12 @@ nohup bash ~/nightly-repo/nightly-benchmark.sh --workload=http_logs > ~/nightly-
 tail -f ~/nightly-adhoc-http-logs.log
 
 # Run both sequentially
-bash ~/nightly-repo/run-all-workloads.sh
+nohup bash ~/nightly-repo/run-all-workloads.sh > ~/nightly-adhoc-all.log 2>&1 &
+tail -f ~/nightly-adhoc-all.log
+
+# Per-workload logs are also written to:
+#   ~/nightly-adhoc-clickbench.log
+#   ~/nightly-adhoc-http_logs.log
 ```
 
 ## Nightly Loop Mode
@@ -62,11 +67,11 @@ Edit `nightly-config.json`:
 
 ## Results
 
-- **S3**: `s3://opensearch-nightly-500923064869/nightly/`
+- **S3**: `s3://<YOUR_S3_BUCKET>/nightly/`
   - `indexing-throughput-clickbench.csv`
   - `nightly-indexing-trend-clickbench.html`
 - **CloudWatch**: Namespace `OpenSearch/Nightly`
-- **Node stats**: `s3://.../runs/{RUN_ID}/node-stats/{engine}/...`
+- **Node stats**: `s3://<YOUR_S3_BUCKET>/runs/{RUN_ID}/node-stats/{engine}/...`
 
 ## Troubleshooting
 
