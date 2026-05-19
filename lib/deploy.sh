@@ -85,10 +85,10 @@ parse_cdk_outputs() {
   local outputs_file="$HOME/nightly-cdk-outputs.json"
   local stack_key="OpenSearchCodeGuruStack-${NIGHTLY_STACK_SUFFIX}"
 
-  PARQUET_IP=$(jq -r ".\"$stack_key\".B4ParquetPrivateIp // empty" "$outputs_file")
-  PARQUET_LUCENE_IP=$(jq -r ".\"$stack_key\".D4ParquetLucenePrivateIp // empty" "$outputs_file")
-  LUCENE_IP=$(jq -r ".\"$stack_key\".C3LucenePrivateIp // empty" "$outputs_file")
-  RUN_ID=$(jq -r ".\"$stack_key\".F1RunID // empty" "$outputs_file")
+  PARQUET_IP=$(jq -r ".\"$stack_key\".ParquetPrivateIp // empty" "$outputs_file")
+  PARQUET_LUCENE_IP=$(jq -r ".\"$stack_key\".ParquetLucenePrivateIp // empty" "$outputs_file")
+  LUCENE_IP=$(jq -r ".\"$stack_key\".LucenePrivateIp // empty" "$outputs_file")
+  RUN_ID=$(jq -r ".\"$stack_key\".RunID // empty" "$outputs_file")
 
   if [ -z "$PARQUET_IP" ] || [ -z "$LUCENE_IP" ] || [ -z "$PARQUET_LUCENE_IP" ]; then
     echo "ERROR: Could not extract IPs from CDK outputs"
