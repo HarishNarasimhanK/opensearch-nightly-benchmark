@@ -69,7 +69,7 @@ run_benchmark() {
     bulk_clients=50
   else
     workload_path="$HOME/lucene-workloads/${workload}"
-    bulk_clients=8
+    bulk_clients=50
   fi
 
   # Determine test procedure based on workload and engine
