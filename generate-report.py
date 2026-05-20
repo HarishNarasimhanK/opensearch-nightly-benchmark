@@ -220,7 +220,16 @@ def main():
             f.write(full_report)
         print(f"\n💾 Report saved to {args.output}")
 
-    # 5. Post to Slack
+    # 5. Upload to S3
+    s3_key = f"nightly/reports/nightly-report-{datetime.now(timezone.utc).strftime('%Y%m%d')}.md"
+    try:
+        s3 = boto3.client("s3")
+        s3.put_object(Bucket=args.bucket, Key=s3_key, Body=full_report.encode("utf-8"), ContentType="text/markdown")
+        print(f"\n☁️  Report uploaded to s3://{args.bucket}/{s3_key}")
+    except Exception as e:
+        print(f"\nWARNING: Failed to upload report to S3: {e}")
+
+    # 6. Post to Slack
     if args.slack_webhook and not args.dry_run:
         print("\n📤 Posting to Slack...")
         post_to_slack(args.slack_webhook, full_report)
