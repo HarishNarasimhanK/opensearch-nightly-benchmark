@@ -140,9 +140,9 @@ Keep it under 2000 characters for Slack message limits.
 Include:
 1. A one-line summary (pass/fail, any regressions)
 2. Today's throughput comparison table (all 3 engines × workloads)
-3. Trend analysis (improving/degrading/stable vs previous runs)
-4. Notable observations or anomalies
-5. Parquet-to-Lucene ratio (how much faster/slower is Parquet vs Lucene)
+3. *Improvement over Lucene*: Calculate and show how much faster Parquet and ParquetLucene are compared to Lucene (e.g., "Parquet is 2.5x faster than Lucene"). Use the formula: engine_throughput / lucene_throughput.
+4. Trend analysis (improving/degrading/stable vs previous runs)
+5. Notable observations or anomalies
 
 Here is the data:
 
@@ -200,7 +200,7 @@ def main():
     # 1. Build context from S3 data
     context = build_context(args.bucket)
     print(f"\n📋 Context ({len(context)} chars):")
-    print(context[:500] + "..." if len(context) > 500 else context)
+    print(context)
 
     # 2. Call Bedrock
     print(f"\n🤖 Calling Bedrock ({args.model})...")
