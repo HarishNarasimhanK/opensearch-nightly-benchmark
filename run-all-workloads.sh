@@ -46,7 +46,16 @@ while true; do
   done
 
   if [ -z "$MODE" ]; then
-    echo "All workloads complete. Exiting."
+    echo "All workloads complete. Generating report..."
+
+    # Generate AI report and post to Slack
+    python3 "$SCRIPT_DIR/generate-report.py" \
+      --bucket "$CONFIG_S3_BUCKET" \
+      --slack-webhook "${SLACK_WEBHOOK_URL:-}" \
+      --output "/tmp/nightly-report-$(date -u +%Y%m%d).md" \
+      || echo "WARNING: Report generation failed"
+
+    echo "Done. Exiting."
     exit 0
   fi
 

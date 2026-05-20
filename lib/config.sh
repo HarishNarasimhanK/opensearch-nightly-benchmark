@@ -60,6 +60,11 @@ load_config() {
   CONFIG_LUCENE_WORKLOAD_BRANCH=$(jq -r '.luceneWorkloadBranch // "main"' "$config_file")
   CONFIG_WORKLOAD=$(jq -r '.workload // "clickbench"' "$config_file")
 
+  # Slack webhook — read from env or ~/.nightly-secrets (NOT from config file)
+  if [ -z "${SLACK_WEBHOOK_URL:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
+    SLACK_WEBHOOK_URL=$(grep -s '^SLACK_WEBHOOK_URL=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+  fi
+
   # Clamp runIntervalHours to [4, 24]
   local raw_interval
   raw_interval=$(jq -r '.runIntervalHours // 24' "$config_file")
@@ -86,6 +91,7 @@ load_config() {
   export CONFIG_LUCENE_WORKLOAD_REPO
   export CONFIG_LUCENE_WORKLOAD_BRANCH
   export CONFIG_WORKLOAD
+  export SLACK_WEBHOOK_URL
 
   echo "Config loaded:"
   echo "  Parquet:    ${CONFIG_PARQUET_REPO}@${CONFIG_PARQUET_BRANCH}"
