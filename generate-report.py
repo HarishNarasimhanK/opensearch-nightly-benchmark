@@ -247,14 +247,14 @@ def main():
     except Exception as e:
         print(f"\nWARNING: Failed to upload report to S3: {e}")
 
-    # 6. Post to Slack
-    if args.slack_webhook and not args.dry_run:
-        print("\n📤 Posting to Slack...")
-        post_to_slack(args.slack_webhook, full_report)
-    elif args.dry_run:
-        print("\n[DRY RUN] Skipping Slack post.")
-    elif not args.slack_webhook:
-        print("\n[INFO] No --slack-webhook provided. Skipping Slack post.")
+    # 6. Post to Slack (disabled — waiting for webhook approval)
+    # if args.slack_webhook and not args.dry_run:
+    #     print("\n📤 Posting to Slack...")
+    #     post_to_slack(args.slack_webhook, full_report)
+    # elif args.dry_run:
+    #     print("\n[DRY RUN] Skipping Slack post.")
+    # elif not args.slack_webhook:
+    #     print("\n[INFO] No --slack-webhook provided. Skipping Slack post.")
 
 
 if __name__ == "__main__":
