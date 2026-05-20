@@ -15,6 +15,7 @@ import argparse
 import json
 import csv
 import io
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -167,19 +168,36 @@ Here is the data:
 
 
 def post_to_slack(webhook_url, message):
-    """Post a message to Slack via incoming webhook."""
-    payload = json.dumps({"text": message})
-
-    result = subprocess.run(
-        ["curl", "-s", "-X", "POST", "-H", "Content-type: application/json",
-         "--data", payload, webhook_url],
-        capture_output=True, text=True
-    )
-
-    if result.returncode != 0 or "ok" not in result.stdout.lower():
-        print(f"WARNING: Slack post may have failed: {result.stdout} {result.stderr}")
+    """Post a message to Slack via API token or webhook."""
+    # Check if it's a token (xoxe/xoxp/xoxb) or webhook URL
+    if webhook_url.startswith("xox"):
+        # Use Slack API with token
+        channel = os.environ.get("SLACK_CHANNEL", "harish-test-nightly")
+        payload = json.dumps({"channel": channel, "text": message})
+        result = subprocess.run(
+            ["curl", "-s", "-X", "POST", "https://slack.com/api/chat.postMessage",
+             "-H", f"Authorization: Bearer {webhook_url}",
+             "-H", "Content-type: application/json",
+             "--data", payload],
+            capture_output=True, text=True
+        )
+        response = result.stdout
+        if '"ok":true' in response:
+            print("✅ Report posted to Slack")
+        else:
+            print(f"WARNING: Slack post may have failed: {response}")
     else:
-        print("✅ Report posted to Slack")
+        # Use webhook URL
+        payload = json.dumps({"text": message})
+        result = subprocess.run(
+            ["curl", "-s", "-X", "POST", "-H", "Content-type: application/json",
+             "--data", payload, webhook_url],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0 or "ok" not in result.stdout.lower():
+            print(f"WARNING: Slack post may have failed: {result.stdout} {result.stderr}")
+        else:
+            print("✅ Report posted to Slack")
 
 
 def main():

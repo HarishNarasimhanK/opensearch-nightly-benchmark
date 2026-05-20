@@ -60,9 +60,19 @@ load_config() {
   CONFIG_LUCENE_WORKLOAD_BRANCH=$(jq -r '.luceneWorkloadBranch // "main"' "$config_file")
   CONFIG_WORKLOAD=$(jq -r '.workload // "clickbench"' "$config_file")
 
-  # Slack webhook — read from env or ~/.nightly-secrets (NOT from config file)
+  # Slack — read from env or ~/.nightly-secrets (NOT from config file)
   if [ -z "${SLACK_WEBHOOK_URL:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
     SLACK_WEBHOOK_URL=$(grep -s '^SLACK_WEBHOOK_URL=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+  fi
+  if [ -z "${SLACK_TOKEN:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
+    SLACK_TOKEN=$(grep -s '^SLACK_TOKEN=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+  fi
+  if [ -z "${SLACK_CHANNEL:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
+    SLACK_CHANNEL=$(grep -s '^SLACK_CHANNEL=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+  fi
+  # Use token as webhook if no webhook URL set
+  if [ -z "${SLACK_WEBHOOK_URL:-}" ] && [ -n "${SLACK_TOKEN:-}" ]; then
+    SLACK_WEBHOOK_URL="$SLACK_TOKEN"
   fi
 
   # Clamp runIntervalHours to [4, 24]
@@ -92,6 +102,7 @@ load_config() {
   export CONFIG_LUCENE_WORKLOAD_BRANCH
   export CONFIG_WORKLOAD
   export SLACK_WEBHOOK_URL
+  export SLACK_CHANNEL
 
   echo "Config loaded:"
   echo "  Parquet:    ${CONFIG_PARQUET_REPO}@${CONFIG_PARQUET_BRANCH}"
