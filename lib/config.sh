@@ -101,8 +101,8 @@ load_config() {
   export CONFIG_LUCENE_WORKLOAD_REPO
   export CONFIG_LUCENE_WORKLOAD_BRANCH
   export CONFIG_WORKLOAD
-  export SLACK_WEBHOOK_URL
-  export SLACK_CHANNEL
+  export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
+  export SLACK_CHANNEL="${SLACK_CHANNEL:-}"
 
   echo "Config loaded:"
   echo "  Parquet:    ${CONFIG_PARQUET_REPO}@${CONFIG_PARQUET_BRANCH}"
