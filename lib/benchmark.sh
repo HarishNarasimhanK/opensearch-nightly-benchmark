@@ -100,6 +100,11 @@ run_benchmark() {
   echo "║  Bulk Clients:   ${bulk_clients}"
   echo "║  Include Tasks:  ${include_tasks}"
   echo "║  Ingest %:       ${CONFIG_INGEST_PERCENTAGE}"
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+  echo "║  Shards:         ${CONFIG_NUMBER_OF_SHARDS:-1}"
+  echo "║  Replicas:       ${CONFIG_NUMBER_OF_REPLICAS:-0}"
+  echo "║  Replication:    SEGMENT (remote store)"
+  fi
   echo "║  Results File:   ${results_file}"
   echo "╚══════════════════════════════════════════════════════════════════╝"
 
@@ -122,6 +127,16 @@ run_benchmark() {
   echo "──────────────────────────────────────────────────────────────────"
   echo "  [RUN] opensearch-benchmark"
   echo "──────────────────────────────────────────────────────────────────"
+  # Build workload-params based on remote store flag
+  local workload_params
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    # Remote store path: multi-node with configured shards/replicas + segment replication
+    workload_params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_shards\": ${CONFIG_NUMBER_OF_SHARDS:-1}, \"number_of_replicas\": ${CONFIG_NUMBER_OF_REPLICAS:-0}, \"replication_type\": \"SEGMENT\", \"bulk_indexing_clients\": ${bulk_clients}}"
+  else
+    # Original single-node path: no replicas, no replication type
+    workload_params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
+  fi
+
   echo "CMD: opensearch-benchmark run \\"
   echo "  --pipeline=benchmark-only \\"
   echo "  --workload-path=\"${workload_path}\" \\"
@@ -131,7 +146,7 @@ run_benchmark() {
   echo "  --kill-running-processes \\"
   echo "  --results-format=csv \\"
   echo "  --results-file=\"${results_file}\" \\"
-  echo "  --workload-params='{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}'"
+  echo "  --workload-params='${workload_params}'"
   echo ""
 
   opensearch-benchmark run \
@@ -143,7 +158,7 @@ run_benchmark() {
     --kill-running-processes \
     --results-format=csv \
     --results-file="$results_file" \
-    --workload-params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
+    --workload-params="$workload_params"
 
   local exit_code=$?
 

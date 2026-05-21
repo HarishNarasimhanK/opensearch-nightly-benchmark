@@ -14,5 +14,8 @@
   "workload": "clickbench",
   "ingestPercentage": 100,
   "runIntervalHours": 24,
-  "s3Bucket": "opensearch-nightly-500923064869"
+  "s3Bucket": "opensearch-nightly-500923064869",
+  "dataNodeCount": 3,
+  "numberOfShards": 1,
+  "numberOfReplicas": 1
 }

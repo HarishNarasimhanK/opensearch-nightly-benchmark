@@ -60,6 +60,17 @@ load_config() {
   CONFIG_LUCENE_WORKLOAD_BRANCH=$(jq -r '.luceneWorkloadBranch // "main"' "$config_file")
   CONFIG_WORKLOAD=$(jq -r '.workload // "clickbench"' "$config_file")
 
+  # Cluster topology (nightly is always multi-node with remote store)
+  CONFIG_DATA_NODE_COUNT=$(jq -r '.dataNodeCount // 3' "$config_file")
+  CONFIG_NUMBER_OF_SHARDS=$(jq -r '.numberOfShards // 1' "$config_file")
+  CONFIG_NUMBER_OF_REPLICAS=$(jq -r '.numberOfReplicas // 2' "$config_file")
+
+  # Validate: replicas must be < dataNodeCount
+  if [ "$CONFIG_NUMBER_OF_REPLICAS" -ge "$CONFIG_DATA_NODE_COUNT" ]; then
+    echo "ERROR: numberOfReplicas ($CONFIG_NUMBER_OF_REPLICAS) must be < dataNodeCount ($CONFIG_DATA_NODE_COUNT)"
+    exit 1
+  fi
+
   # Slack — read from env or ~/.nightly-secrets (NOT from config file)
   if [ -z "${SLACK_WEBHOOK_URL:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
     SLACK_WEBHOOK_URL=$(grep -s '^SLACK_WEBHOOK_URL=' "$HOME/.nightly-secrets" | cut -d'=' -f2- || true)
@@ -101,6 +112,9 @@ load_config() {
   export CONFIG_LUCENE_WORKLOAD_REPO
   export CONFIG_LUCENE_WORKLOAD_BRANCH
   export CONFIG_WORKLOAD
+  export CONFIG_DATA_NODE_COUNT
+  export CONFIG_NUMBER_OF_SHARDS
+  export CONFIG_NUMBER_OF_REPLICAS
   export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
   export SLACK_CHANNEL="${SLACK_CHANNEL:-}"
 
@@ -112,4 +126,6 @@ load_config() {
   echo "  Interval:   ${CONFIG_RUN_INTERVAL_HOURS}h"
   echo "  S3 Bucket:  ${CONFIG_S3_BUCKET}"
   echo "  Mode:       ${CONFIG_MODE}"
+  echo "  Cluster:    multi (${CONFIG_DATA_NODE_COUNT} data nodes, ${CONFIG_NUMBER_OF_SHARDS} shards, ${CONFIG_NUMBER_OF_REPLICAS} replicas)"
+  echo "  Remote Store: enabled (segment replication)"
 }

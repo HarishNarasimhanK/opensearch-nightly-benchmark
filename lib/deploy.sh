@@ -62,11 +62,23 @@ deploy_cdk_stack() {
     echo "STACK_SUFFIX=${NIGHTLY_STACK_SUFFIX}" >> .env
   fi
 
+  # Build remote store / multi-node flags only when --remote flag is passed
+  local cluster_args=""
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    cluster_args="-c remoteStoreEnabled=true -c clusterMode=multi -c dataNodeCount=${CONFIG_DATA_NODE_COUNT}"
+  fi
+
+  # Run ID prefix differs when remote store is enabled (keeps S3 paths separate)
+  local run_id_prefix="nightly-${CONFIG_WORKLOAD}"
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    run_id_prefix="nightly-${CONFIG_WORKLOAD}-remote"
+  fi
+
   npx cdk deploy "OpenSearchCodeGuruStack-${NIGHTLY_STACK_SUFFIX}" \
     --require-approval never \
     --outputs-file "$HOME/nightly-cdk-outputs.json" \
     -c benchmarkEnabled=false \
-    -c runIdPrefix="nightly-${CONFIG_WORKLOAD}" \
+    -c runIdPrefix="$run_id_prefix" \
     -c s3Bucket="$CONFIG_S3_BUCKET" \
     -c parquetBranch="$CONFIG_PARQUET_BRANCH" \
     -c parquetRepo="$CONFIG_PARQUET_REPO" \
@@ -78,20 +90,33 @@ deploy_cdk_stack() {
     -c parquetLuceneWorkloadBranch="$CONFIG_PARQUET_LUCENE_WORKLOAD_BRANCH" \
     -c luceneWorkloadRepo="$CONFIG_LUCENE_WORKLOAD_REPO" \
     -c luceneWorkloadBranch="$CONFIG_LUCENE_WORKLOAD_BRANCH" \
-    -c ingestPercentage="$CONFIG_INGEST_PERCENTAGE"
+    -c ingestPercentage="$CONFIG_INGEST_PERCENTAGE" \
+    $cluster_args
 }
 
 parse_cdk_outputs() {
   local outputs_file="$HOME/nightly-cdk-outputs.json"
   local stack_key="OpenSearchCodeGuruStack-${NIGHTLY_STACK_SUFFIX}"
 
-  PARQUET_IP=$(jq -r ".\"$stack_key\".ParquetPrivateIp // empty" "$outputs_file")
-  PARQUET_LUCENE_IP=$(jq -r ".\"$stack_key\".ParquetLucenePrivateIp // empty" "$outputs_file")
-  LUCENE_IP=$(jq -r ".\"$stack_key\".LucenePrivateIp // empty" "$outputs_file")
+  # Multi-node: extract ALB DNS endpoints (strip http:// and :9200)
+  PARQUET_IP=$(jq -r ".\"$stack_key\".ParquetClusterALBUrl // empty" "$outputs_file" | sed 's|http://||' | sed 's|:9200||')
+  PARQUET_LUCENE_IP=$(jq -r ".\"$stack_key\".ParquetLuceneClusterALBUrl // empty" "$outputs_file" | sed 's|http://||' | sed 's|:9200||')
+  LUCENE_IP=$(jq -r ".\"$stack_key\".LuceneClusterALBUrl // empty" "$outputs_file" | sed 's|http://||' | sed 's|:9200||')
   RUN_ID=$(jq -r ".\"$stack_key\".RunID // empty" "$outputs_file")
 
+  # Fallback to private IPs if ALB URLs not found (single-node deploys)
+  if [ -z "$PARQUET_IP" ]; then
+    PARQUET_IP=$(jq -r ".\"$stack_key\".ParquetPrivateIp // empty" "$outputs_file")
+  fi
+  if [ -z "$PARQUET_LUCENE_IP" ]; then
+    PARQUET_LUCENE_IP=$(jq -r ".\"$stack_key\".ParquetLucenePrivateIp // empty" "$outputs_file")
+  fi
+  if [ -z "$LUCENE_IP" ]; then
+    LUCENE_IP=$(jq -r ".\"$stack_key\".LucenePrivateIp // empty" "$outputs_file")
+  fi
+
   if [ -z "$PARQUET_IP" ] || [ -z "$LUCENE_IP" ] || [ -z "$PARQUET_LUCENE_IP" ]; then
-    echo "ERROR: Could not extract IPs from CDK outputs"
+    echo "ERROR: Could not extract endpoints from CDK outputs"
     echo "Outputs: $(cat "$outputs_file")"
     return 1
   fi
@@ -101,8 +126,13 @@ parse_cdk_outputs() {
     RUN_ID="nightly-run-$(date +%Y%m%d_%H%M%S)"
   fi
 
-  echo "Parquet IP:        $PARQUET_IP"
-  echo "ParquetLucene IP:  $PARQUET_LUCENE_IP"
-  echo "Lucene IP:         $LUCENE_IP"
-  echo "Run ID:            $RUN_ID"
+  echo "Parquet:        $PARQUET_IP"
+  echo "ParquetLucene:  $PARQUET_LUCENE_IP"
+  echo "Lucene:         $LUCENE_IP"
+  echo "Run ID:         $RUN_ID"
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    echo "Cluster:        multi (${CONFIG_DATA_NODE_COUNT} data nodes, remote store enabled)"
+  else
+    echo "Cluster:        single-node"
+  fi
 }

@@ -24,9 +24,11 @@ source "$SCRIPT_DIR/lib/teardown.sh"
 # --- Parse CLI args ---
 MODE_OVERRIDE=""
 WORKLOAD_OVERRIDE=""
+REMOTE_STORE_FLAG=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --nightly) MODE_OVERRIDE="nightly"; shift ;;
+    --remote) REMOTE_STORE_FLAG="true"; shift ;;
     --workload=*) WORKLOAD_OVERRIDE="${1#--workload=}"; shift ;;
     --workload) WORKLOAD_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -56,8 +58,16 @@ while true; do
   # Override workload from CLI (required)
   export CONFIG_WORKLOAD="$WORKLOAD_OVERRIDE"
 
+  # Remote store flag (CLI --remote) controls multi-node vs single-node path
+  export REMOTE_STORE_ENABLED="${REMOTE_STORE_FLAG:-false}"
+
   # Set stack suffix to include workload name for isolation (sanitize for CloudFormation)
-  export NIGHTLY_STACK_SUFFIX="nightly-${CONFIG_WORKLOAD//_/-}"
+  # Add -remote suffix when remote store is enabled to keep stacks/runs separate
+  if [ "$REMOTE_STORE_ENABLED" = "true" ]; then
+    export NIGHTLY_STACK_SUFFIX="nightly-${CONFIG_WORKLOAD//_/-}-remote"
+  else
+    export NIGHTLY_STACK_SUFFIX="nightly-${CONFIG_WORKLOAD//_/-}"
+  fi
 
   if [ -n "$MODE_OVERRIDE" ]; then
     CONFIG_MODE="$MODE_OVERRIDE"
@@ -187,14 +197,18 @@ while true; do
   publish_cloudwatch_metrics "$RUN_ID"
 
   # 13. Generate trend chart
-  local_csv="/tmp/indexing-throughput-${CONFIG_WORKLOAD}.csv"
+  csv_suffix=""
+  if [ "$REMOTE_STORE_ENABLED" = "true" ]; then
+    csv_suffix="-remote"
+  fi
+  local_csv="/tmp/indexing-throughput-${CONFIG_WORKLOAD}${csv_suffix}.csv"
   if [ -f "$local_csv" ]; then
     python3 "$SCRIPT_DIR/generate-nightly-trend.py" \
       --csv "$local_csv" \
-      --output "/tmp/nightly-indexing-trend-${CONFIG_WORKLOAD}.html" \
+      --output "/tmp/nightly-indexing-trend-${CONFIG_WORKLOAD}${csv_suffix}.html" \
       --workload "$CONFIG_WORKLOAD" && \
-    aws s3 cp "/tmp/nightly-indexing-trend-${CONFIG_WORKLOAD}.html" \
-      "s3://$CONFIG_S3_BUCKET/nightly/nightly-indexing-trend-${CONFIG_WORKLOAD}.html" || \
+    aws s3 cp "/tmp/nightly-indexing-trend-${CONFIG_WORKLOAD}${csv_suffix}.html" \
+      "s3://$CONFIG_S3_BUCKET/nightly/nightly-indexing-trend-${CONFIG_WORKLOAD}${csv_suffix}.html" || \
     echo "WARNING: Trend chart generation/upload failed"
   fi
 

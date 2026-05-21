@@ -13,9 +13,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/config.sh"
 
 MODE=""
-if [[ "${1:-}" == "--nightly" ]]; then
-  MODE="--nightly"
-fi
+REMOTE_FLAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --nightly) MODE="--nightly" ;;
+    --remote) REMOTE_FLAG="--remote" ;;
+  esac
+done
 
 WORKLOADS=("clickbench" "http_logs")
 
@@ -23,21 +27,25 @@ while true; do
   load_config "$SCRIPT_DIR/nightly-config.json"
 
   for WORKLOAD in "${WORKLOADS[@]}"; do
+    SUFFIX=""
+    if [ "$REMOTE_FLAG" = "--remote" ]; then
+      SUFFIX="-remote"
+    fi
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║  Running workload: ${WORKLOAD}"
+    echo "║  Running workload: ${WORKLOAD}${SUFFIX}"
     echo "╠══════════════════════════════════════════════════════════════╣"
-    echo "║  Stack:      OpenSearchCodeGuruStack-nightly-${WORKLOAD}"
-    echo "║  Log file:   ~/nightly-adhoc-${WORKLOAD}.log"
-    echo "║  CW prefix:  /opensearch/nightly-${WORKLOAD}/"
-    echo "║  S3 CSV:     s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${WORKLOAD}.csv"
-    echo "║  S3 HTML:    s3://${CONFIG_S3_BUCKET}/nightly/nightly-indexing-trend-${WORKLOAD}.html"
+    echo "║  Stack:      OpenSearchCodeGuruStack-nightly-${WORKLOAD//_/-}${SUFFIX}"
+    echo "║  Log file:   ~/nightly-adhoc-${WORKLOAD}${SUFFIX}.log"
+    echo "║  CW prefix:  /opensearch/nightly-${WORKLOAD}${SUFFIX}/"
+    echo "║  S3 CSV:     s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${WORKLOAD}${SUFFIX}.csv"
+    echo "║  S3 HTML:    s3://${CONFIG_S3_BUCKET}/nightly/nightly-indexing-trend-${WORKLOAD}${SUFFIX}.html"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo ""
-    echo "CMD: bash nightly-benchmark.sh --workload=${WORKLOAD}"
+    echo "CMD: bash nightly-benchmark.sh --workload=${WORKLOAD} ${REMOTE_FLAG}"
     echo ""
 
-    bash "$SCRIPT_DIR/nightly-benchmark.sh" --workload="$WORKLOAD" 2>&1 | tee "$HOME/nightly-adhoc-${WORKLOAD}.log"
+    bash "$SCRIPT_DIR/nightly-benchmark.sh" --workload="$WORKLOAD" $REMOTE_FLAG 2>&1 | tee "$HOME/nightly-adhoc-${WORKLOAD}${SUFFIX}.log"
     EXIT_CODE=${PIPESTATUS[0]}
 
     if [ $EXIT_CODE -ne 0 ]; then

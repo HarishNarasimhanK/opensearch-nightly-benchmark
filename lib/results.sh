@@ -38,7 +38,12 @@ parse_and_store_results() {
   local start_time="$3"
   local end_time="$4"
   local workload="${CONFIG_WORKLOAD:-clickbench}"
-  local CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${workload}.csv"
+  # Separate CSV for remote-store runs
+  local suffix=""
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    suffix="-remote"
+  fi
+  local CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${workload}${suffix}.csv"
 
   local date_str
   date_str=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -48,7 +53,7 @@ parse_and_store_results() {
     duration_sec=$(( $(date -d "$end_time" +%s 2>/dev/null || echo 0) - $(date -d "$start_time" +%s 2>/dev/null || echo 0) ))
   fi
 
-  local local_csv="/tmp/indexing-throughput-${workload}.csv"
+  local local_csv="/tmp/indexing-throughput-${workload}${suffix}.csv"
   aws s3 cp "$CSV_S3_PATH" "$local_csv" 2>/dev/null || {
     echo "$CSV_HEADERS" > "$local_csv"
   }
@@ -73,9 +78,13 @@ record_failure() {
   date_str=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   local mode="${CONFIG_MODE:-nightly}"
   local workload="${CONFIG_WORKLOAD:-clickbench}"
-  local CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${workload}.csv"
+  local suffix=""
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    suffix="-remote"
+  fi
+  local CSV_S3_PATH="s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${workload}${suffix}.csv"
 
-  local local_csv="/tmp/indexing-throughput-${workload}.csv"
+  local local_csv="/tmp/indexing-throughput-${workload}${suffix}.csv"
   aws s3 cp "$CSV_S3_PATH" "$local_csv" 2>/dev/null || {
     echo "$CSV_HEADERS" > "$local_csv"
   }
