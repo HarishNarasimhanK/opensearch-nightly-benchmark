@@ -63,7 +63,7 @@ load_config() {
   # Cluster topology (nightly is always multi-node with remote store)
   CONFIG_DATA_NODE_COUNT=$(jq -r '.dataNodeCount // 3' "$config_file")
   CONFIG_NUMBER_OF_SHARDS=$(jq -r '.numberOfShards // 1' "$config_file")
-  CONFIG_NUMBER_OF_REPLICAS=$(jq -r '.numberOfReplicas // 2' "$config_file")
+  CONFIG_NUMBER_OF_REPLICAS=$(jq -r '.numberOfReplicas // 1' "$config_file")
 
   # Validate: replicas must be < dataNodeCount
   if [ "$CONFIG_NUMBER_OF_REPLICAS" -ge "$CONFIG_DATA_NODE_COUNT" ]; then

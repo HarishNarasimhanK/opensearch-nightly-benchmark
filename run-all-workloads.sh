@@ -1,11 +1,14 @@
 #!/bin/bash
-# run-all-workloads.sh — Orchestrator that runs nightly-benchmark.sh for each workload sequentially.
+# run-all-workloads.sh — Orchestrator that runs nightly-benchmark.sh for each
+# workload + cluster mode combination sequentially.
 #
 # Usage:
-#   bash run-all-workloads.sh           # Adhoc: run clickbench then http_logs, exit
-#   bash run-all-workloads.sh --nightly # Loop: run both workloads, sleep, repeat
+#   bash run-all-workloads.sh                # All 4: clickbench, http_logs, clickbench-remote, http_logs-remote
+#   bash run-all-workloads.sh --nightly      # Same 4, but loops (sleep + repeat)
+#   bash run-all-workloads.sh --remote-only  # Only remote variants (clickbench-remote, http_logs-remote)
+#   bash run-all-workloads.sh --no-remote    # Only single-node variants (clickbench, http_logs)
 #
-# Each workload gets its own CDK stack, instances, and S3 paths. Zero overlap.
+# Each combination gets its own CDK stack, instances, and S3 paths. Zero overlap.
 
 set -euo pipefail
 
@@ -13,24 +16,39 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/config.sh"
 
 MODE=""
-REMOTE_FLAG=""
+RUN_REMOTE="true"
+RUN_NO_REMOTE="true"
 for arg in "$@"; do
   case "$arg" in
     --nightly) MODE="--nightly" ;;
-    --remote) REMOTE_FLAG="--remote" ;;
+    --remote-only) RUN_NO_REMOTE="false"; RUN_REMOTE="true" ;;
+    --no-remote) RUN_REMOTE="false"; RUN_NO_REMOTE="true" ;;
   esac
 done
 
 WORKLOADS=("clickbench" "http_logs")
 
+# Build the run list: each entry is "WORKLOAD|REMOTE_FLAG"
+RUNS=()
+if [ "$RUN_NO_REMOTE" = "true" ]; then
+  for w in "${WORKLOADS[@]}"; do RUNS+=("${w}|"); done
+fi
+if [ "$RUN_REMOTE" = "true" ]; then
+  for w in "${WORKLOADS[@]}"; do RUNS+=("${w}|--remote"); done
+fi
+
 while true; do
   load_config "$SCRIPT_DIR/nightly-config.json"
 
-  for WORKLOAD in "${WORKLOADS[@]}"; do
+  for ENTRY in "${RUNS[@]}"; do
+    WORKLOAD="${ENTRY%%|*}"
+    REMOTE_FLAG="${ENTRY##*|}"
+
     SUFFIX=""
     if [ "$REMOTE_FLAG" = "--remote" ]; then
       SUFFIX="-remote"
     fi
+
     echo ""
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║  Running workload: ${WORKLOAD}${SUFFIX}"
@@ -49,12 +67,12 @@ while true; do
     EXIT_CODE=${PIPESTATUS[0]}
 
     if [ $EXIT_CODE -ne 0 ]; then
-      echo "WARNING: ${WORKLOAD} run failed (exit code: $EXIT_CODE). Continuing to next workload."
+      echo "WARNING: ${WORKLOAD}${SUFFIX} run failed (exit code: $EXIT_CODE). Continuing to next."
     fi
   done
 
   if [ -z "$MODE" ]; then
-    echo "All workloads complete. Generating report..."
+    echo "All runs complete. Generating report..."
 
     # Generate AI report and post to Slack
     python3 "$SCRIPT_DIR/generate-report.py" \
@@ -67,6 +85,6 @@ while true; do
     exit 0
   fi
 
-  echo "All workloads complete. Sleeping ${CONFIG_RUN_INTERVAL_HOURS} hours..."
+  echo "All runs complete. Sleeping ${CONFIG_RUN_INTERVAL_HOURS} hours..."
   sleep $((CONFIG_RUN_INTERVAL_HOURS * 3600))
 done

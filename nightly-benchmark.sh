@@ -75,8 +75,13 @@ while true; do
     CONFIG_MODE="adhoc"
   fi
 
-  # 2. Acquire lock (workload-specific lock file)
-  LOCK_FILE="/tmp/nightly-benchmark-${CONFIG_WORKLOAD}.lock"
+  # 2. Acquire lock (workload + mode specific lock file so single-node and
+  # --remote runs of the same workload don't collide)
+  if [ "$REMOTE_STORE_ENABLED" = "true" ]; then
+    LOCK_FILE="/tmp/nightly-benchmark-${CONFIG_WORKLOAD}-remote.lock"
+  else
+    LOCK_FILE="/tmp/nightly-benchmark-${CONFIG_WORKLOAD}.lock"
+  fi
   if ! acquire_lock; then
     echo "Another ${CONFIG_WORKLOAD} run is active. Exiting."
     exit 1

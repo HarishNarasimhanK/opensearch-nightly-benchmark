@@ -44,12 +44,45 @@ precheck_destroy_existing() {
     --query "Stacks[0].StackStatus" \
     --output text 2>/dev/null || echo "DOES_NOT_EXIST")
 
-  if [ "$stack_status" != "DOES_NOT_EXIST" ]; then
-    echo "WARNING: Existing stack ${stack_name} found (status: $stack_status). Destroying..."
-    cd "$CDK_DIR"
-    npx cdk destroy "$stack_name" --force || true
-    sleep 30
+  if [ "$stack_status" = "DOES_NOT_EXIST" ]; then
+    return 0
   fi
+
+  echo "WARNING: Existing stack ${stack_name} found (status: $stack_status). Cleaning up..."
+
+  # If the stack is mid-flight, it must be cancelled before destroy can succeed.
+  case "$stack_status" in
+    CREATE_IN_PROGRESS|UPDATE_IN_PROGRESS|UPDATE_ROLLBACK_IN_PROGRESS|REVIEW_IN_PROGRESS)
+      echo "Stack is in-progress; cancelling update first..."
+      aws cloudformation cancel-update-stack --stack-name "$stack_name" 2>/dev/null || true
+
+      # Wait until CFN settles to a non in-progress state (max 15min)
+      for i in $(seq 1 90); do
+        local cur_status
+        cur_status=$(aws cloudformation describe-stacks \
+          --stack-name "$stack_name" \
+          --query "Stacks[0].StackStatus" \
+          --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+        case "$cur_status" in
+          *_IN_PROGRESS) sleep 10 ;;
+          *) echo "Stack settled to: $cur_status"; break ;;
+        esac
+      done
+      ;;
+    DELETE_IN_PROGRESS)
+      echo "Stack is already being deleted; waiting for completion..."
+      aws cloudformation wait stack-delete-complete --stack-name "$stack_name" 2>/dev/null || true
+      return 0
+      ;;
+  esac
+
+  cd "$CDK_DIR"
+  npx cdk destroy "$stack_name" --force || {
+    echo "WARNING: cdk destroy failed; falling back to aws cloudformation delete-stack"
+    aws cloudformation delete-stack --stack-name "$stack_name" 2>/dev/null || true
+    aws cloudformation wait stack-delete-complete --stack-name "$stack_name" 2>/dev/null || true
+  }
+  sleep 30
 }
 
 deploy_cdk_stack() {
