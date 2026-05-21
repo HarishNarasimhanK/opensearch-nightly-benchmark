@@ -204,7 +204,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate nightly benchmark report")
     parser.add_argument("--bucket", required=True, help="S3 bucket name")
     parser.add_argument("--slack-webhook", help="Slack incoming webhook URL")
-    parser.add_argument("--model", default="anthropic.claude-opus-4-20250514-v1:0",
+    parser.add_argument("--model", default="us.anthropic.claude-opus-4-5-20251101-v1:0",
                         help="Bedrock model ID")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print report without posting to Slack")
