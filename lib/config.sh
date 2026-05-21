@@ -62,13 +62,13 @@ load_config() {
 
   # Slack — read from env or ~/.nightly-secrets (NOT from config file)
   if [ -z "${SLACK_WEBHOOK_URL:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
-    SLACK_WEBHOOK_URL=$(grep -s '^SLACK_WEBHOOK_URL=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+    SLACK_WEBHOOK_URL=$(grep -s '^SLACK_WEBHOOK_URL=' "$HOME/.nightly-secrets" | cut -d'=' -f2- || true)
   fi
   if [ -z "${SLACK_TOKEN:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
-    SLACK_TOKEN=$(grep -s '^SLACK_TOKEN=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+    SLACK_TOKEN=$(grep -s '^SLACK_TOKEN=' "$HOME/.nightly-secrets" | cut -d'=' -f2- || true)
   fi
   if [ -z "${SLACK_CHANNEL:-}" ] && [ -f "$HOME/.nightly-secrets" ]; then
-    SLACK_CHANNEL=$(grep -s '^SLACK_CHANNEL=' "$HOME/.nightly-secrets" | cut -d'=' -f2-)
+    SLACK_CHANNEL=$(grep -s '^SLACK_CHANNEL=' "$HOME/.nightly-secrets" | cut -d'=' -f2- || true)
   fi
   # Use token as webhook if no webhook URL set
   if [ -z "${SLACK_WEBHOOK_URL:-}" ] && [ -n "${SLACK_TOKEN:-}" ]; then
