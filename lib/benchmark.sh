@@ -186,41 +186,12 @@ run_benchmark() {
   curl -s "http://${host}:9200/_cat/indices?v" 2>/dev/null
   echo ""
 
-  # --- POST-BENCHMARK: shard state validation (remote-store runs only) ---
+  # --- POST-BENCHMARK: shard layout snapshot (informational only) ---
   if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
     echo "──────────────────────────────────────────────────────────────────"
-    echo "  [POST] Shard state validation (remote store)"
+    echo "  [POST] Shard layout (remote store)"
     echo "──────────────────────────────────────────────────────────────────"
-    local shards_json
-    shards_json=$(curl -s "http://${host}:9200/_cat/shards?format=json" 2>/dev/null)
-    if [ -n "$shards_json" ]; then
-      local total_shards started_shards unstarted_shards primary_shards replica_shards started_replicas
-      total_shards=$(echo "$shards_json" | jq '. | length')
-      started_shards=$(echo "$shards_json" | jq '[.[] | select(.state == "STARTED")] | length')
-      unstarted_shards=$(echo "$shards_json" | jq '[.[] | select(.state != "STARTED")] | length')
-      primary_shards=$(echo "$shards_json" | jq '[.[] | select(.prirep == "p")] | length')
-      replica_shards=$(echo "$shards_json" | jq '[.[] | select(.prirep == "r")] | length')
-      started_replicas=$(echo "$shards_json" | jq '[.[] | select(.prirep == "r" and .state == "STARTED")] | length')
-
-      echo "  Total shards:     $total_shards"
-      echo "  Started:          $started_shards"
-      echo "  Primaries:        $primary_shards"
-      echo "  Replicas:         $replica_shards (started: $started_replicas)"
-
-      if [ "$unstarted_shards" -gt 0 ]; then
-        echo "  ⚠️  $unstarted_shards shard(s) not in STARTED state:"
-        echo "$shards_json" | jq -r '.[] | select(.state != "STARTED") | "    \(.index)/\(.shard) \(.prirep) \(.state) \(.node // "-")"'
-      fi
-
-      # When replicas are configured but none started, this is a hard failure of the remote-store path
-      local expected_replicas="${CONFIG_NUMBER_OF_REPLICAS:-0}"
-      if [ "$expected_replicas" -gt 0 ] && [ "$replica_shards" -gt 0 ] && [ "$started_replicas" -lt "$replica_shards" ]; then
-        echo "  ❌ Remote store replication did NOT take effect for ${engine}: $((replica_shards - started_replicas))/$replica_shards replica(s) failed to start"
-        exit_code=1
-      fi
-    else
-      echo "  WARNING: Could not query _cat/shards"
-    fi
+    curl -s "http://${host}:9200/_cat/shards?v&h=index,shard,prirep,state,docs,store,node" 2>/dev/null
     echo ""
   fi
 

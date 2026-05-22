@@ -1,8 +1,8 @@
 {
   "cdkRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-cdk.git",
   "cdkBranch": "main",
-  "parquetRepo": "https://github.com/HarishNarasimhanK/OpenSearch.git",
-  "parquetBranch": "fix-nodestat",
+  "parquetRepo": "https://github.com/ask-kamal-nayan/OpenSearch.git",
+  "parquetBranch": "dataFusionbugfix2",
   "luceneRepo": "https://github.com/opensearch-project/OpenSearch.git",
   "luceneBranch": "main",
   "parquetWorkloadRepo": "https://github.com/HarishNarasimhanK/opensearch-benchmark-workloads.git",
