@@ -78,93 +78,111 @@ def get_today_results(bucket, workload):
     return today_rows
 
 
-def build_context(bucket):
-    """Build the full context string for the AI prompt."""
-    context_parts = []
-
-    context_parts.append("=" * 60)
-    context_parts.append("NIGHTLY BENCHMARK RESULTS")
-    context_parts.append("=" * 60)
-
-    for workload in ["clickbench", "http_logs"]:
-        context_parts.append(f"\n{'─' * 40}")
-        context_parts.append(f"WORKLOAD: {workload}")
-        context_parts.append(f"{'─' * 40}")
-
-        # Today's results
-        today = get_today_results(bucket, workload)
-        if today:
-            context_parts.append(f"\nToday's results ({len(today)} rows):")
-            for row in today:
-                engine = row.get("engine", "?")
-                mean_tp = row.get("mean_throughput", "0")
-                median_tp = row.get("median_throughput", "0")
-                max_tp = row.get("max_throughput", "0")
-                error_rate = row.get("error_rate", "0")
-                status = row.get("status", "?")
-                context_parts.append(
-                    f"  {engine}: mean={mean_tp} docs/s, median={median_tp}, "
-                    f"max={max_tp}, error_rate={error_rate}%, status={status}"
-                )
-        else:
-            context_parts.append("\n  No results for today.")
-
-        # Historical trend (last 7 runs per engine)
-        history = get_latest_results(bucket, workload)
-        if history:
-            context_parts.append(f"\nHistorical trend (last 7 runs per engine):")
-            for engine, rows in history.items():
-                means = [float(r.get("mean_throughput", 0)) for r in rows]
-                dates = [r.get("date", "?")[:10] for r in rows]
-                context_parts.append(f"  {engine}:")
-                for d, m in zip(dates, means):
-                    context_parts.append(f"    {d}: {m:.2f} docs/s")
-
-    return "\n".join(context_parts)
-
-
-def call_bedrock(context, model_id="us.anthropic.claude-sonnet-4-20250514"):
-    """Call Amazon Bedrock with the context and return the report."""
+def call_bedrock_comparison(log_content, csv_content, workload, suffix, model_id):
+    """Prompt 1: Engine-wise comparison using full benchmark logs + CSV results.
+    
+    Feeds the complete benchmark log (cluster settings, index settings, _cat/indices, 
+    errors) plus the full CSV results for all 3 engines into the model.
+    Produces a per-engine comparison report with settings validation.
+    """
     bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
 
-    prompt = f"""You are a performance engineering analyst. Generate a concise nightly benchmark report 
-for the OpenSearch Parquet vs Lucene indexing benchmark.
+    mode_label = "Remote Store (segment replication, multi-node)" if suffix == "-remote" else "Single-Node (local disk, no replication)"
 
-The benchmark compares 3 storage engines:
-- **Parquet**: Columnar storage format (DataFusion-based, PPL queries)
+    prompt = f"""You are a performance engineering analyst reviewing an OpenSearch indexing benchmark.
+
+**Workload:** {workload}
+**Cluster Mode:** {mode_label}
+
+The benchmark ran 3 storage engines on the same workload:
+- **Parquet**: Columnar storage (DataFusion-based, PPL queries)
 - **ParquetLucene**: Parquet primary + Lucene secondary index (hybrid)
 - **Lucene**: Standard OpenSearch (baseline)
 
-Format the report for Slack (use Slack mrkdwn: *bold*, `code`, bullet points with •).
-Keep it under 2000 characters for Slack message limits.
+Below is the FULL benchmark log (contains PRE/POST cluster health, opensearch.yml settings, 
+index settings, _cat/indices output, and OSB run commands for all 3 engines) followed by 
+the complete CSV results.
 
-Include:
-1. A one-line summary (pass/fail, any regressions)
-2. Today's throughput comparison table (all 3 engines × workloads)
-3. *Improvement over Lucene*: Calculate and show how much faster Parquet and ParquetLucene are compared to Lucene (e.g., "Parquet is 2.5x faster than Lucene"). Use the formula: engine_throughput / lucene_throughput.
-4. Trend analysis (improving/degrading/stable vs previous runs)
-5. Notable observations or anomalies
+YOUR TASK — produce a structured report with these sections:
 
-Here is the data:
+**1. Settings Validation** (per engine):
+- What data format is configured? (composite.primary_data_format, pluggable.dataformat)
+- Is replication enabled? (replication.type, number_of_replicas)
+- Cluster health before and after?
+- Any misconfigurations or unexpected settings?
 
-{context}
+**2. Results Summary** (table format):
+- Engine | Mean Throughput (docs/s) | Median | Max | Error Rate | Store Size | Doc Count
+- Include ALL metrics from the CSV, not just throughput
+
+**3. Parquet vs Lucene Comparison**:
+- Parquet/Lucene ratio (X.Xx faster)
+- ParquetLucene/Lucene ratio
+- Storage efficiency comparison (store size per doc)
+
+**4. Issues & Observations**:
+- Any engine that failed (error_rate > 0, status != success)
+- Any engine that didn't start (0 docs indexed)
+- Settings that look wrong for the cluster mode
+- One-line verdict: PASS / PARTIAL / FAIL
+
+Use markdown. Be precise with numbers. Under 2000 characters.
+
+--- BENCHMARK LOG ---
+{log_content}
+
+--- CSV RESULTS (all 3 engines) ---
+{csv_content}
 """
 
     body = json.dumps({
         "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 2000,
+        "max_tokens": 2500,
         "messages": [{"role": "user", "content": prompt}],
     })
 
     response = bedrock.invoke_model(
-        modelId=model_id,
-        contentType="application/json",
-        accept="application/json",
-        body=body,
+        modelId=model_id, contentType="application/json",
+        accept="application/json", body=body,
     )
+    return json.loads(response["body"].read())["content"][0]["text"]
 
-    result = json.loads(response["body"].read())
-    return result["content"][0]["text"]
+
+def call_bedrock_trend(trend_data, model_id):
+    """Prompt 2: 7-day trend analysis per engine."""
+    bedrock = boto3.client("bedrock-runtime", region_name="us-east-1")
+
+    prompt = f"""You are a performance engineering analyst. Analyze the 7-day throughput trend 
+for each engine and identify regressions or improvements.
+
+Engines:
+- **Parquet**: Columnar storage
+- **ParquetLucene**: Hybrid (parquet + lucene secondary)
+- **Lucene**: Standard OpenSearch baseline
+
+Your task:
+1. For each engine, state: IMPROVING / STABLE / DEGRADING (with % change from first to last valid run)
+2. Flag any days with 0.00 docs/s as "failed run" (don't include in trend calculation)
+3. Note if any engine has fewer than 3 valid data points (insufficient data for trend)
+4. If there's a significant change (>10%), highlight it
+
+Use markdown formatting. Be concise — under 800 characters.
+
+Historical data (last 7 runs per engine):
+{trend_data}
+"""
+
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 1000,
+        "messages": [{"role": "user", "content": prompt}],
+    })
+
+    response = bedrock.invoke_model(
+        modelId=model_id, contentType="application/json",
+        accept="application/json", body=body,
+    )
+    return json.loads(response["body"].read())["content"][0]["text"]
 
 
 def post_to_slack(webhook_url, message):
@@ -203,6 +221,8 @@ def post_to_slack(webhook_url, message):
 def main():
     parser = argparse.ArgumentParser(description="Generate nightly benchmark report")
     parser.add_argument("--bucket", required=True, help="S3 bucket name")
+    parser.add_argument("--workload", default="", help="Specific workload (clickbench or http_logs). Empty = all.")
+    parser.add_argument("--suffix", default="", help="Suffix like -remote. Empty = single-node.")
     parser.add_argument("--slack-webhook", help="Slack incoming webhook URL")
     parser.add_argument("--model", default="us.anthropic.claude-opus-4-5-20251101-v1:0",
                         help="Bedrock model ID")
@@ -214,18 +234,80 @@ def main():
     print("📊 Generating nightly benchmark report...")
     print(f"   Bucket: {args.bucket}")
     print(f"   Model:  {args.model}")
+    print(f"   Workload: {args.workload or 'all'}")
+    print(f"   Suffix: {args.suffix or '(none)'}")
 
-    # 1. Build context from S3 data
-    context = build_context(args.bucket)
-    print(f"\n📋 Context ({len(context)} chars):")
-    print(context)
+    # 1. Determine workloads
+    if args.workload:
+        workloads = [args.workload]
+    else:
+        workloads = ["clickbench", "http_logs"]
 
-    # 2. Call Bedrock
+    print(f"\n📋 Workloads: {workloads}, Suffix: '{args.suffix}'")
+
+    # 2. Call Bedrock — two specialized prompts
     print(f"\n🤖 Calling Bedrock ({args.model})...")
-    report = call_bedrock(context, model_id=args.model)
+
+    # --- Prompt 1: Engine comparison from logs + CSV ---
+    # Read the benchmark log for this workload+mode
+    log_file = os.path.expanduser(f"~/nightly-{args.workload}{args.suffix}.log")
+    if os.path.isfile(log_file):
+        with open(log_file, "r") as f:
+            log_content = f.read()
+        print(f"  Log file: {log_file} ({len(log_content)} chars)")
+    else:
+        log_content = "(Log file not found)"
+        print(f"  WARNING: Log file not found: {log_file}")
+
+    # Read all 3 engine CSV result files
+    csv_parts = []
+    for engine in ["parquet", "parquetLucene", "lucene"]:
+        csv_name = f"{args.workload}{args.suffix}"
+        csv_file = f"/tmp/nightly-result-{engine}-{args.workload}.csv"
+        if os.path.isfile(csv_file):
+            with open(csv_file, "r") as f:
+                csv_parts.append(f"=== {engine} CSV ===\n{f.read()}")
+        else:
+            csv_parts.append(f"=== {engine} CSV ===\n(not found: {csv_file})")
+    csv_content = "\n\n".join(csv_parts)
+
+    print("  [1/2] Engine comparison (from logs + CSV)...")
+    try:
+        comparison = call_bedrock_comparison(
+            log_content, csv_content, args.workload, args.suffix, model_id=args.model
+        )
+    except Exception as e:
+        comparison = f"(Failed to generate comparison: {e})"
+        print(f"  ERROR: {e}")
+
+    # --- Prompt 2: Trend analysis from S3 historical CSV ---
+    # Build trend data string
+    trend_parts = []
+    for workload in workloads:
+        csv_name = f"{workload}{args.suffix}"
+        history = get_latest_results(args.bucket, csv_name)
+        if history:
+            trend_parts.append(f"Workload: {workload}")
+            for engine, rows in history.items():
+                trend_parts.append(f"  {engine}:")
+                for r in rows:
+                    trend_parts.append(f"    {r.get('date','?')[:10]}: {float(r.get('mean_throughput',0)):.2f} docs/s")
+    trend_str = "\n".join(trend_parts) if trend_parts else "No historical data."
+
+    print("  [2/2] Trend analysis...")
+    try:
+        trend = call_bedrock_trend(trend_str, model_id=args.model)
+    except Exception as e:
+        trend = f"(Failed to generate trend: {e})"
+        print(f"  ERROR: {e}")
+
+    # Assemble final report
+    report = f"{comparison}\n\n---\n\n### 📈 7-Day Trend\n\n{trend}"
 
     # 3. Add header
-    header = f"🌙 *Nightly Benchmark Report* — {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n\n"
+    mode_label = "Remote Store" if args.suffix == "-remote" else "Single-Node"
+    workload_label = args.workload or "All Workloads"
+    header = f"🌙 *Nightly Benchmark Report* — {datetime.now(timezone.utc).strftime('%Y-%m-%d')} | {workload_label} | {mode_label}\n\n"
     full_report = header + report
 
     print("\n" + "=" * 60)
@@ -239,7 +321,8 @@ def main():
         print(f"\n💾 Report saved to {args.output}")
 
     # 5. Upload to S3
-    s3_key = f"nightly/reports/nightly-report-{datetime.now(timezone.utc).strftime('%Y%m%d')}.md"
+    report_name = f"nightly-report-{args.workload or 'all'}{args.suffix}-{datetime.now(timezone.utc).strftime('%Y%m%d')}.md"
+    s3_key = f"nightly/reports/{report_name}"
     try:
         s3 = boto3.client("s3")
         s3.put_object(Bucket=args.bucket, Key=s3_key, Body=full_report.encode("utf-8"), ContentType="text/markdown")

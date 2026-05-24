@@ -40,6 +40,12 @@ fi
 while true; do
   load_config "$SCRIPT_DIR/nightly-config.json"
 
+  # Clean stale logs from previous run
+  echo "Cleaning previous run logs..."
+  rm -f "$HOME"/nightly-clickbench.log "$HOME"/nightly-http_logs.log
+  rm -f "$HOME"/nightly-clickbench-remote.log "$HOME"/nightly-http_logs-remote.log
+  rm -f /tmp/nightly-result-*.csv
+
   for ENTRY in "${RUNS[@]}"; do
     WORKLOAD="${ENTRY%%|*}"
     REMOTE_FLAG="${ENTRY##*|}"
@@ -54,7 +60,7 @@ while true; do
     echo "║  Running workload: ${WORKLOAD}${SUFFIX}"
     echo "╠══════════════════════════════════════════════════════════════╣"
     echo "║  Stack:      OpenSearchCodeGuruStack-nightly-${WORKLOAD//_/-}${SUFFIX}"
-    echo "║  Log file:   ~/nightly-adhoc-${WORKLOAD}${SUFFIX}.log"
+    echo "║  Log file:   ~/nightly-${WORKLOAD}${SUFFIX}.log"
     echo "║  CW prefix:  /opensearch/nightly-${WORKLOAD}${SUFFIX}/"
     echo "║  S3 CSV:     s3://${CONFIG_S3_BUCKET}/nightly/indexing-throughput-${WORKLOAD}${SUFFIX}.csv"
     echo "║  S3 HTML:    s3://${CONFIG_S3_BUCKET}/nightly/nightly-indexing-trend-${WORKLOAD}${SUFFIX}.html"
@@ -63,25 +69,31 @@ while true; do
     echo "CMD: bash nightly-benchmark.sh --workload=${WORKLOAD} ${REMOTE_FLAG}"
     echo ""
 
-    bash "$SCRIPT_DIR/nightly-benchmark.sh" --workload="$WORKLOAD" $REMOTE_FLAG 2>&1 | tee "$HOME/nightly-adhoc-${WORKLOAD}${SUFFIX}.log"
+    bash "$SCRIPT_DIR/nightly-benchmark.sh" --workload="$WORKLOAD" $REMOTE_FLAG 2>&1 | tee "$HOME/nightly-${WORKLOAD}${SUFFIX}.log"
     EXIT_CODE=${PIPESTATUS[0]}
 
     if [ $EXIT_CODE -ne 0 ]; then
       echo "WARNING: ${WORKLOAD}${SUFFIX} run failed (exit code: $EXIT_CODE). Continuing to next."
     fi
+
+    # Generate report for this specific workload+mode combination
+    echo ""
+    echo "── Generating report for ${WORKLOAD}${SUFFIX} ──"
+    python3 "$SCRIPT_DIR/generate-report.py" \
+      --bucket "$CONFIG_S3_BUCKET" \
+      --workload "${WORKLOAD}" \
+      --suffix "${SUFFIX}" \
+      --output "/tmp/nightly-report-${WORKLOAD}${SUFFIX}-$(date -u +%Y%m%d).md" \
+      || echo "WARNING: Report generation failed for ${WORKLOAD}${SUFFIX} (non-fatal)"
+    echo ""
   done
 
   if [ -z "$MODE" ]; then
-    echo "All runs complete. Generating report..."
-
-    # Generate AI report and post to Slack
-    python3 "$SCRIPT_DIR/generate-report.py" \
-      --bucket "$CONFIG_S3_BUCKET" \
-      --slack-webhook "${SLACK_WEBHOOK_URL:-}" \
-      --output "/tmp/nightly-report-$(date -u +%Y%m%d).md" \
-      || echo "WARNING: Report generation failed"
-
-    echo "Done. Exiting."
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+    echo "  All ${#RUNS[@]} runs complete."
+    echo "  Reports uploaded to: s3://${CONFIG_S3_BUCKET}/nightly/reports/"
+    echo "════════════════════════════════════════════════════════════════"
     exit 0
   fi
 
