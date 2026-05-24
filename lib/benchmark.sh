@@ -28,9 +28,9 @@ ensure_workloads_cloned() {
 wait_for_health() {
   local host="$1"
   local engine="$2"
-  local max_attempts=999999
+  local max_attempts=240  # 240 × 30s = 2 hours
 
-  echo "Waiting for $engine cluster health at $host:9200..."
+  echo "Waiting for $engine cluster health at $host:9200 (timeout: 2h)..."
   for i in $(seq 1 $max_attempts); do
     local status
     status=$(curl -s "http://${host}:9200/_cluster/health" 2>/dev/null | \
