@@ -99,7 +99,17 @@ while true; do
   if [ -z "$MODE" ]; then
     echo ""
     echo "════════════════════════════════════════════════════════════════"
-    echo "  All ${#RUNS[@]} runs complete."
+    echo "  All ${#RUNS[@]} runs complete. Generating aggregated report..."
+    echo "════════════════════════════════════════════════════════════════"
+
+    # Generate final aggregated report (all 4 modes + trend in one HTML)
+    python3 "$SCRIPT_DIR/generate-report.py" \
+      --bucket "$CONFIG_S3_BUCKET" \
+      --aggregate \
+      --output "/tmp/report-$(date -u +%Y%m%d).html" \
+      || echo "WARNING: Aggregated report generation failed (non-fatal)"
+
+    echo ""
     echo "  Reports uploaded to: s3://${CONFIG_S3_BUCKET}/nightly/reports/"
     echo "════════════════════════════════════════════════════════════════"
     exit 0
