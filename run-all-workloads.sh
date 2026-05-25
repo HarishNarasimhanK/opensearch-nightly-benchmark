@@ -79,11 +79,19 @@ while true; do
     # Generate report for this specific workload+mode combination
     echo ""
     echo "── Generating report for ${WORKLOAD}${SUFFIX} ──"
+
+    # Extract run ID from CDK outputs
+    local_run_id=""
+    if [ -f "$HOME/nightly-cdk-outputs.json" ]; then
+      local_run_id=$(jq -r ".[].RunID // empty" "$HOME/nightly-cdk-outputs.json" 2>/dev/null | head -1)
+    fi
+
     python3 "$SCRIPT_DIR/generate-report.py" \
       --bucket "$CONFIG_S3_BUCKET" \
       --workload "${WORKLOAD}" \
       --suffix "${SUFFIX}" \
-      --output "/tmp/nightly-report-${WORKLOAD}${SUFFIX}-$(date -u +%Y%m%d).md" \
+      --run-id "${local_run_id}" \
+      --output "/tmp/nightly-report-${WORKLOAD}${SUFFIX}-$(date -u +%Y%m%d).html" \
       || echo "WARNING: Report generation failed for ${WORKLOAD}${SUFFIX} (non-fatal)"
     echo ""
   done

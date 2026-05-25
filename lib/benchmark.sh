@@ -58,6 +58,9 @@ run_benchmark() {
   local run_id="$3"
   local workload="${CONFIG_WORKLOAD:-clickbench}"
 
+  # Ensure we're in a valid directory (cdk-repo may have been deleted)
+  cd "$HOME"
+
   local test_procedure workload_path bulk_clients include_tasks
 
   # Determine workload path based on engine and workload type
