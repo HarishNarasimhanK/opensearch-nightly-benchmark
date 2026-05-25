@@ -82,10 +82,10 @@ run_benchmark() {
     else
       test_procedure="datafusion-ppl"
     fi
-    include_tasks="delete-index,create-index,index-append"
+    include_tasks="delete-index,create-index,check-cluster-health,index-append,refresh-after-index,force-merge,refresh-after-force-merge,wait-until-merges-finish"
   elif [ "$workload" = "http_logs" ]; then
     test_procedure="append-no-conflicts-index-only"
-    include_tasks="delete-index,create-index,index-append"
+    include_tasks="delete-index,create-index,check-cluster-health,index-append,refresh-after-index,force-merge,refresh-after-force-merge,wait-until-merges-finish"
   else
     echo "ERROR: Unknown workload: $workload"
     return 1
@@ -126,20 +126,24 @@ run_benchmark() {
   curl -s "http://${host}:9200/_cluster/health?pretty" 2>/dev/null
   echo ""
 
-  # --- RUN OSB ---
+  # --- RUN OSB (4 iterations: 1 warmup + 3 measured) ---
   echo "──────────────────────────────────────────────────────────────────"
-  echo "  [RUN] opensearch-benchmark"
+  echo "  [RUN] opensearch-benchmark (1 warmup + 3 measured iterations)"
   echo "──────────────────────────────────────────────────────────────────"
   # Build workload-params based on remote store flag
   local workload_params
   if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
-    # Remote store path: multi-node with configured shards/replicas.
-    # Segment replication is auto-applied by OpenSearch because the CDK sets the
-    # remote_store node attributes in opensearch.yml — no replication_type needed here.
     workload_params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_shards\": ${CONFIG_NUMBER_OF_SHARDS:-1}, \"number_of_replicas\": ${CONFIG_NUMBER_OF_REPLICAS:-0}, \"bulk_indexing_clients\": ${bulk_clients}}"
   else
-    # Original single-node path: no replicas
     workload_params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
+  fi
+
+  # Warmup params: 10% ingest to warm JVM/cache without full run time
+  local warmup_params
+  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
+    warmup_params="{\"ingest_percentage\": 10, \"number_of_shards\": ${CONFIG_NUMBER_OF_SHARDS:-1}, \"number_of_replicas\": ${CONFIG_NUMBER_OF_REPLICAS:-0}, \"bulk_indexing_clients\": ${bulk_clients}}"
+  else
+    warmup_params="{\"ingest_percentage\": 10, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
   fi
 
   echo "CMD: opensearch-benchmark run \\"
@@ -150,10 +154,20 @@ run_benchmark() {
   echo "  --include-tasks=\"${include_tasks}\" \\"
   echo "  --kill-running-processes \\"
   echo "  --results-format=csv \\"
-  echo "  --results-file=\"${results_file}\" \\"
   echo "  --workload-params='${workload_params}'"
   echo ""
 
+  local iteration_dir="/tmp/nightly-iterations-${engine}-${workload}"
+  rm -rf "$iteration_dir"
+  mkdir -p "$iteration_dir"
+
+  local exit_code=0
+
+  # --- Iteration 0: Warmup (10% ingest, result discarded) ---
+  echo ""
+  echo "  ┌─────────────────────────────────────────────────────────┐"
+  echo "  │  WARMUP ITERATION (10% ingest, result discarded)        │"
+  echo "  └─────────────────────────────────────────────────────────┘"
   opensearch-benchmark run \
     --pipeline=benchmark-only \
     --workload-path="$workload_path" \
@@ -162,10 +176,88 @@ run_benchmark() {
     --include-tasks="$include_tasks" \
     --kill-running-processes \
     --results-format=csv \
-    --results-file="$results_file" \
-    --workload-params="$workload_params"
+    --results-file="${iteration_dir}/warmup.csv" \
+    --workload-params="$warmup_params" || true
+  echo "  Warmup complete (result discarded)."
+  echo ""
 
-  local exit_code=$?
+  # --- Iterations 1-3: Measured runs (full ingest) ---
+  for iter in 1 2 3; do
+    echo "  ┌─────────────────────────────────────────────────────────┐"
+    echo "  │  MEASURED ITERATION ${iter}/3                              │"
+    echo "  └─────────────────────────────────────────────────────────┘"
+    opensearch-benchmark run \
+      --pipeline=benchmark-only \
+      --workload-path="$workload_path" \
+      --target-hosts="${host}:9200" \
+      --test-procedure="$test_procedure" \
+      --include-tasks="$include_tasks" \
+      --kill-running-processes \
+      --results-format=csv \
+      --results-file="${iteration_dir}/iter${iter}.csv" \
+      --workload-params="$workload_params"
+
+    local iter_exit=$?
+    if [ $iter_exit -ne 0 ]; then
+      echo "  WARNING: Iteration ${iter} failed (exit code: $iter_exit)"
+      exit_code=$iter_exit
+    else
+      echo "  ✓ Iteration ${iter} complete."
+    fi
+    echo ""
+  done
+
+  # --- Average the 3 measured CSVs into the final results file ---
+  echo "  Averaging 3 iterations → ${results_file}"
+  python3 -c "
+import csv, sys, os
+from collections import defaultdict
+
+iteration_dir = '${iteration_dir}'
+output_file = '${results_file}'
+
+# Read all iteration CSVs
+all_rows = []
+for i in range(1, 4):
+    f = os.path.join(iteration_dir, f'iter{i}.csv')
+    if os.path.isfile(f):
+        with open(f) as fh:
+            reader = csv.DictReader(fh)
+            all_rows.append(list(reader))
+
+if not all_rows:
+    print('ERROR: No iteration CSVs found')
+    sys.exit(1)
+
+# Use first iteration as template, average numeric values
+averaged = []
+for row_idx, row in enumerate(all_rows[0]):
+    avg_row = dict(row)
+    for key in row:
+        if key in ('Metric', 'Task', 'Unit'):
+            continue
+        try:
+            values = [float(all_rows[i][row_idx].get(key, 0)) for i in range(len(all_rows)) if row_idx < len(all_rows[i])]
+            if values:
+                avg_row[key] = f'{sum(values)/len(values):.2f}'
+        except (ValueError, IndexError):
+            pass
+    averaged.append(avg_row)
+
+# Write averaged CSV
+if averaged:
+    with open(output_file, 'w', newline='') as fh:
+        writer = csv.DictWriter(fh, fieldnames=averaged[0].keys())
+        writer.writeheader()
+        writer.writerows(averaged)
+    print(f'  ✓ Averaged {len(all_rows)} iterations → {output_file}')
+else:
+    print('  WARNING: No data to average')
+" || echo "  WARNING: Averaging failed, using last iteration"
+  # Fallback: if averaging failed, copy last iteration
+  if [ ! -f "$results_file" ] && [ -f "${iteration_dir}/iter3.csv" ]; then
+    cp "${iteration_dir}/iter3.csv" "$results_file"
+  fi
 
   # --- POST-BENCHMARK: Cluster health ---
   echo ""
