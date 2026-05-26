@@ -138,12 +138,13 @@ run_benchmark() {
     workload_params="{\"ingest_percentage\": ${CONFIG_INGEST_PERCENTAGE}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
   fi
 
-  # Warmup params: 10% ingest to warm JVM/cache without full run time
+  # Warmup params: 10% of configured ingest to warm JVM/cache without full run time
+  local warmup_ingest=$(echo "${CONFIG_INGEST_PERCENTAGE} * 0.1" | bc -l | awk '{printf "%.2f", $0}')
   local warmup_params
   if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
-    warmup_params="{\"ingest_percentage\": 10, \"number_of_shards\": ${CONFIG_NUMBER_OF_SHARDS:-1}, \"number_of_replicas\": ${CONFIG_NUMBER_OF_REPLICAS:-0}, \"bulk_indexing_clients\": ${bulk_clients}}"
+    warmup_params="{\"ingest_percentage\": ${warmup_ingest}, \"number_of_shards\": ${CONFIG_NUMBER_OF_SHARDS:-1}, \"number_of_replicas\": ${CONFIG_NUMBER_OF_REPLICAS:-0}, \"bulk_indexing_clients\": ${bulk_clients}}"
   else
-    warmup_params="{\"ingest_percentage\": 10, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
+    warmup_params="{\"ingest_percentage\": ${warmup_ingest}, \"number_of_replicas\": 0, \"bulk_indexing_clients\": ${bulk_clients}}"
   fi
 
   echo "CMD: opensearch-benchmark run \\"
@@ -271,7 +272,7 @@ else:
   echo "──────────────────────────────────────────────────────────────────"
   echo "  [POST] Index Settings"
   echo "──────────────────────────────────────────────────────────────────"
-  curl -s "http://${host}:9200/_all/_settings?pretty" 2>/dev/null | head -60
+  curl -s "http://${host}:9200/_all/_settings?pretty" 2>/dev/null
   echo ""
 
   # --- POST-BENCHMARK: _cat/indices ---
@@ -280,15 +281,6 @@ else:
   echo "──────────────────────────────────────────────────────────────────"
   curl -s "http://${host}:9200/_cat/indices?v" 2>/dev/null
   echo ""
-
-  # --- POST-BENCHMARK: shard layout snapshot (informational only) ---
-  if [ "${REMOTE_STORE_ENABLED:-false}" = "true" ]; then
-    echo "──────────────────────────────────────────────────────────────────"
-    echo "  [POST] Shard layout (remote store)"
-    echo "──────────────────────────────────────────────────────────────────"
-    curl -s "http://${host}:9200/_cat/shards?v&h=index,shard,prirep,state,docs,store,node" 2>/dev/null
-    echo ""
-  fi
 
   # --- Result ---
   echo "══════════════════════════════════════════════════════════════════"
